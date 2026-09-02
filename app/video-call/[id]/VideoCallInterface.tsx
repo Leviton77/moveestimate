@@ -32,12 +32,20 @@ function supportedMimeType() {
 
 export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterfaceProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Hidden canvas that the live camera is painted onto every frame. The
+  // recorder captures the canvas, not the camera directly, so flipping the
+  // camera only changes what is drawn — the recorded stream never breaks and
+  // the whole call is one continuous file.
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number | null>(null);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  // Recorded segments accumulate here for the whole call. This ref is created
-  // once on mount and is deliberately never reset on a camera switch.
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const canvasStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string>("");
+  const switchingRef = useRef(false);
 
   const [isConnected, setIsConnected] = useState(false);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
@@ -45,13 +53,45 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Acquire the camera and keep a recorder running. Re-runs when the camera
-  // is flipped; the cleanup flushes the current segment into chunksRef before
-  // the next segment starts, so switching cameras never discards footage.
+  // Point the preview <video> (and therefore the canvas draw loop) at a fresh
+  // camera stream for the given facing mode, stopping the previous one.
+  const applyCamera = useCallback(async (facingMode: "user" | "environment") => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = stream;
+    const video = videoRef.current;
+    if (video) {
+      video.srcObject = stream;
+      await video.play().catch(() => undefined);
+    }
+  }, []);
+
+  // One-time setup: acquire mic + camera, start the canvas draw loop, and
+  // start a single recorder that runs for the entire call.
   useEffect(() => {
     let cancelled = false;
 
-    const startSegment = async () => {
+    const stopEverything = () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // already stopping
+        }
+      }
+      mediaRecorderRef.current = null;
+      [cameraStreamRef, audioStreamRef, canvasStreamRef].forEach((ref) => {
+        ref.current?.getTracks().forEach((track) => track.stop());
+        ref.current = null;
+      });
+    };
+
+    const initialize = async () => {
       try {
         if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
           throw new Error(
@@ -59,84 +99,104 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
           );
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: isFrontCamera ? "user" : "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
+        audioStreamRef.current = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
           },
         });
+        if (cancelled) return stopEverything();
 
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
+        await applyCamera("user");
+        if (cancelled) return stopEverything();
 
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => undefined);
-        }
-        setIsConnected(true);
-        setError(null);
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        if (!video || !canvas) throw new Error("The recorder failed to start.");
+
+        await new Promise<void>((resolve) => {
+          if (video.videoWidth > 0) return resolve();
+          video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+        });
+        if (cancelled) return stopEverything();
+
+        canvas.width = video.videoWidth || 720;
+        canvas.height = video.videoHeight || 1280;
+        const ctx = canvas.getContext("2d");
+
+        const draw = () => {
+          const source = videoRef.current;
+          if (ctx && source && source.readyState >= 2) {
+            const { width: cw, height: ch } = canvas;
+            const vw = source.videoWidth || cw;
+            const vh = source.videoHeight || ch;
+            // cover-fit so a portrait/landscape camera swap never letterboxes
+            const scale = Math.max(cw / vw, ch / vh);
+            const dw = vw * scale;
+            const dh = vh * scale;
+            ctx.drawImage(source, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+          }
+          rafRef.current = requestAnimationFrame(draw);
+        };
+        draw();
+
+        const canvasStream = canvas.captureStream(30);
+        canvasStreamRef.current = canvasStream;
+        const recordStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...(audioStreamRef.current?.getAudioTracks() ?? []),
+        ]);
 
         const mimeType = supportedMimeType();
         mimeTypeRef.current = mimeType;
         const recorder = new MediaRecorder(
-          stream,
+          recordStream,
           mimeType ? { mimeType } : undefined,
         );
         mediaRecorderRef.current = recorder;
-
         recorder.ondataavailable = (event) => {
           if (event.data.size > 0) chunksRef.current.push(event.data);
         };
         recorder.onerror = () => {
           setError("Recording stopped unexpectedly. Please end the session and try again.");
         };
+        recorder.start(1000);
 
-        recorder.start();
+        setIsConnected(true);
         setIsRecording(true);
+        setError(null);
       } catch (err) {
         if (cancelled) return;
         const message =
           err instanceof Error ? err.message : "Unable to access camera or microphone.";
         setError(message);
         setIsConnected(false);
+        stopEverything();
       }
     };
 
-    startSegment();
+    initialize();
 
     return () => {
       cancelled = true;
-      const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== "inactive") {
-        // Flush the trailing chunk of this segment before the tracks stop.
-        try {
-          recorder.requestData();
-        } catch {
-          // Not all browsers support requestData(); stop() still flushes.
-        }
-        recorder.stop();
-      }
-      mediaRecorderRef.current = null;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+      stopEverything();
     };
-  }, [isFrontCamera]);
+  }, [applyCamera]);
 
-  const switchCamera = useCallback(() => {
-    if (isUploading) return;
-    // The effect above handles tearing down the current segment and starting
-    // the next one; we only flip the facing mode here.
-    setIsFrontCamera((front) => !front);
-  }, [isUploading]);
+  const switchCamera = useCallback(async () => {
+    if (isUploading || switchingRef.current) return;
+    switchingRef.current = true;
+    const next = !isFrontCamera;
+    try {
+      await applyCamera(next ? "user" : "environment");
+      setIsFrontCamera(next);
+    } catch {
+      setError("Unable to switch camera. The other camera may not be available.");
+    } finally {
+      switchingRef.current = false;
+    }
+  }, [applyCamera, isFrontCamera, isUploading]);
 
   const handleEndSession = useCallback(async () => {
     setIsUploading(true);
@@ -154,7 +214,14 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
         });
       }
       setIsRecording(false);
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      [cameraStreamRef, audioStreamRef, canvasStreamRef].forEach((ref) => {
+        ref.current?.getTracks().forEach((track) => track.stop());
+        ref.current = null;
+      });
 
       if (chunksRef.current.length === 0) {
         throw new Error("No video data was recorded.");
@@ -206,6 +273,7 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
             muted
             className="video-element"
           />
+          <canvas ref={canvasRef} hidden />
           {!isConnected && <div className="video-placeholder">Connecting camera...</div>}
         </div>
 
