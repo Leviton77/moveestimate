@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Stage = "loading" | "setup" | "preview" | "recording" | "review" | "uploading" | "done" | "missing";
@@ -161,8 +162,8 @@ export function SessionRecorder({ id }: { id: string }) {
   }
 
   if (stage === "loading") return <div className="status-card"><div className="loader" /><p>Loading your secure session…</p></div>;
-  if (stage === "missing") return <div className="status-card"><span className="status-icon">?</span><h1>Session not found</h1><p>This link may be invalid or expired. Start a new estimate if you still need a quote.</p><a className="button button--primary" href="/estimate">Start an estimate</a></div>;
-  if (stage === "done") return <div className="status-card"><span className="status-icon status-icon--success">✓</span><h1>Thank you{session ? `, ${session.clientName}` : ""}!</h1><p>Your walkthrough is safely uploaded. Tom Moving will review it and follow up within one business day.</p><a className="button button--quiet" href="/">Return home</a></div>;
+  if (stage === "missing") return <div className="status-card"><span className="status-icon">?</span><h1>Session not found</h1><p>This link may be invalid or expired. Start a new estimate if you still need a quote.</p><Link className="button button--primary" href="/estimate">Start an estimate</Link></div>;
+  if (stage === "done") return <div className="status-card"><span className="status-icon status-icon--success">✓</span><h1>Thank you{session ? `, ${session.clientName}` : ""}!</h1><p>Your walkthrough is safely uploaded. Tom Moving will review it and follow up within one business day.</p><Link className="button button--quiet" href="/">Return home</Link></div>;
 
   return (
     <div className="recorder-shell">
