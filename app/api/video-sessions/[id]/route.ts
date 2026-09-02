@@ -1,6 +1,6 @@
 import { getVideoSession } from "../../../../db/sessions";
 
-function videoSessionId(value: unknown): value is string {
+function isVideoSessionId(value: unknown): value is string {
   return (
     typeof value === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -9,14 +9,15 @@ function videoSessionId(value: unknown): value is string {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
-    if (!videoSessionId(params.id)) {
+    const { id } = await context.params;
+    if (!isVideoSessionId(id)) {
       return Response.json({ error: "Invalid video session ID." }, { status: 400 });
     }
 
-    const session = await getVideoSession(params.id);
+    const session = await getVideoSession(id);
     if (!session) {
       return Response.json({ error: "Video session not found." }, { status: 404 });
     }

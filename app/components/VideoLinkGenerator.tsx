@@ -23,12 +23,13 @@ export function VideoLinkGenerator({ repEmail }: VideoLinkGeneratorProps) {
         body: JSON.stringify({ repEmail }),
       });
 
+      const data = (await response.json()) as { joinLink?: string; error?: string };
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || "Failed to generate link");
       }
-
-      const data = await response.json();
+      if (!data.joinLink) {
+        throw new Error("The server did not return a video link.");
+      }
       setVideoLink(data.joinLink);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate video link";
