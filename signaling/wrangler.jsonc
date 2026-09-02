@@ -1,0 +1,15 @@
+{
+  // Signaling Worker for the live estimate call (Track 2).
+  // Deploys to your own Cloudflare account, separate from the Sites app:
+  //   cd signaling && npx wrangler deploy
+  "name": "moveestimate-signaling",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [{ "name": "CALL_ROOM", "class_name": "CallRoom" }]
+  },
+  // SQLite-backed Durable Objects are available on the free Workers plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CallRoom"] }]
+}

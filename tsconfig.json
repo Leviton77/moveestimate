@@ -31,5 +31,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "dist", ".vinext", ".wrangler", "outputs", "work"]
+  "exclude": ["node_modules", "dist", ".vinext", ".wrangler", "outputs", "work", "signaling"]
 }

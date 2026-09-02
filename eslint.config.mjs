@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     "dist/**",
     "outputs/**",
     "work/**",
+    // The signaling Worker is a separate package with its own toolchain.
+    "signaling/**",
   ]),
 ]);
 
