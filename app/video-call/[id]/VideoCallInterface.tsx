@@ -54,12 +54,39 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
   const [isUploading, setIsUploading] = useState(false);
 
   // Point the preview <video> (and therefore the canvas draw loop) at a fresh
-  // camera stream for the given facing mode, stopping the previous one.
+  // camera stream for the given facing mode. The previous camera is released
+  // FIRST — many phones (most Android devices) refuse to open the second
+  // camera while the first is still active. The canvas keeps painting the last
+  // frame until the new stream arrives, so the recording is never interrupted.
   const applyCamera = useCallback(async (facingMode: "user" | "environment") => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+    const constraints = (mode: "user" | "environment"): MediaStreamConstraints => ({
+      video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
     });
+
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints(facingMode));
+    } catch (err) {
+      // The requested camera would not open. Restore whatever camera does work
+      // so the customer is not left on a frozen frame, then report the failure.
+      try {
+        const other = facingMode === "user" ? "environment" : "user";
+        cameraStreamRef.current = await navigator.mediaDevices.getUserMedia(
+          constraints(other),
+        );
+        if (videoRef.current) {
+          videoRef.current.srcObject = cameraStreamRef.current;
+          videoRef.current.play().catch(() => undefined);
+        }
+      } catch {
+        // no camera available at all
+      }
+      throw err;
+    }
+
     cameraStreamRef.current = stream;
     const video = videoRef.current;
     if (video) {
@@ -191,8 +218,10 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
     try {
       await applyCamera(next ? "user" : "environment");
       setIsFrontCamera(next);
-    } catch {
-      setError("Unable to switch camera. The other camera may not be available.");
+      setError(null);
+    } catch (err) {
+      const detail = err instanceof Error && err.name ? ` (${err.name})` : "";
+      setError(`Unable to switch camera${detail}. Staying on the current one.`);
     } finally {
       switchingRef.current = false;
     }
@@ -228,15 +257,20 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
       }
 
       const type = mimeTypeRef.current || "video/webm";
-      const extension = type.includes("mp4") ? "mp4" : "webm";
       const videoBlob = new Blob(chunksRef.current, { type });
 
-      const formData = new FormData();
-      formData.append("video", videoBlob, `walkthrough-${Date.now()}.${extension}`);
-
+      // Send the recording as the raw request body (not multipart) so it
+      // streams straight to R2 without being buffered.
       const uploadResponse = await fetch(
         `/api/video-sessions/${videoSessionId}/upload`,
-        { method: "POST", body: formData },
+        {
+          method: "POST",
+          headers: {
+            "content-type": type,
+            "x-video-size": String(videoBlob.size),
+          },
+          body: videoBlob,
+        },
       );
 
       if (!uploadResponse.ok) {

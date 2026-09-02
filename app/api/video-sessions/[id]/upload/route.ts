@@ -24,25 +24,32 @@ export async function POST(
     return Response.json({ error: "Video session not found." }, { status: 404 });
   }
 
-  const formData = await request.formData();
-  const videoBlob = formData.get("video");
-  if (!(videoBlob instanceof Blob)) {
-    return Response.json({ error: "No video file provided." }, { status: 400 });
+  // The recording is sent as the raw request body (not multipart) so it streams
+  // straight to R2 — mirrors app/api/sessions/[id]/video. The client puts the
+  // byte length in x-video-size because Content-Length is not always present on
+  // a streamed upload.
+  const contentType = request.headers.get("content-type")?.split(";")[0] ?? "";
+  const size = Number(
+    request.headers.get("x-video-size") ??
+      request.headers.get("content-length") ??
+      "0",
+  );
+  if (!contentType.startsWith("video/")) {
+    return Response.json({ error: "Please upload a video recording." }, { status: 415 });
   }
-  if (videoBlob.size === 0) {
+  if (!request.body || size <= 0) {
     return Response.json({ error: "The recording was empty." }, { status: 400 });
   }
-  if (videoBlob.size > MAX_VIDEO_BYTES) {
+  if (size > MAX_VIDEO_BYTES) {
     return Response.json({ error: "The recording is larger than 250 MB." }, { status: 413 });
   }
 
-  const contentType = videoBlob.type || "video/webm";
   const extension = contentType.includes("mp4") ? "mp4" : "webm";
   const key = `video-sessions/${id}/${crypto.randomUUID()}.${extension}`;
   const bucket = mediaBucket();
   try {
-    await bucket.put(key, videoBlob.stream(), { httpMetadata: { contentType } });
-    await attachVideoToSession(id, { key, contentType, size: videoBlob.size });
+    await bucket.put(key, request.body, { httpMetadata: { contentType } });
+    await attachVideoToSession(id, { key, contentType, size });
     return Response.json({ ok: true, videoKey: key });
   } catch (error) {
     await bucket.delete(key).catch(() => undefined);
