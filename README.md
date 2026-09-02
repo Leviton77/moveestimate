@@ -26,6 +26,22 @@ This starter does not use `wrangler.jsonc`.
 - `db/sessions.ts` and `db/media.ts` are the D1 and R2 access layers; the
   `sessions` and `video_sessions` tables are created on first use
 
+## Live estimate call
+
+The rep-initiated video walkthrough (`/video-call/:id` for the client,
+`/video-call/:id/rep` for the rep) needs a WebRTC signaling channel, which the
+Sites runtime can't host. It runs as a **separate Cloudflare Worker** in your
+own account — source in [`signaling/`](./signaling), deployed with its own
+`wrangler deploy`. See [`signaling/README.md`](./signaling/README.md).
+
+The Sites app then needs three env vars (copy `.dev.vars.example` to `.dev.vars`
+for local dev; set them on the deployment for production):
+
+| Variable | Purpose |
+| --- | --- |
+| `SIGNALING_URL` | `wss://` origin of the signaling Worker. Empty ⇒ the call is disabled and the walkthrough is recorded solo. |
+| `TURN_KEY_ID`, `TURN_API_TOKEN` | Cloudflare Realtime TURN key. Without them the call is STUN-only and fails behind strict NAT. Served to the browser as short-lived credentials by `GET /api/turn`. |
+
 ## Workspace Auth Headers
 
 OpenAI workspace sites can read the current user's email from

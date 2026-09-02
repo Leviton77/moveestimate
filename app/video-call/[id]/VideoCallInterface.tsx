@@ -1,11 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { startCall, type AppMessage, type CallHandle, type CallState } from "./call";
+import { drawLaser, LASER_COLOR, pointerToFrame, type LaserPoint } from "./laser";
 
 interface VideoCallInterfaceProps {
   videoSessionId: string;
   repEmail: string;
+  /** wss:// origin of the signaling Worker. Empty = record solo, no live call. */
+  signalingUrl: string;
 }
+
+type Stage = "init" | "live" | "ending" | "done" | "error";
 
 /**
  * Pick a container/codec the current browser can actually record. Safari and
@@ -30,34 +36,43 @@ function supportedMimeType() {
   );
 }
 
-export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterfaceProps) {
+export function VideoCallInterface({
+  videoSessionId,
+  repEmail,
+  signalingUrl,
+}: VideoCallInterfaceProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  // Hidden canvas that the live camera is painted onto every frame. The
-  // recorder captures the canvas, not the camera directly, so flipping the
-  // camera only changes what is drawn — the recorded stream never breaks and
-  // the whole call is one continuous file.
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
+  const recCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const audioStreamRef = useRef<MediaStream | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
   const canvasStreamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const mixDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const repAudioMixedRef = useRef(false);
   const chunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string>("");
   const switchingRef = useRef(false);
+  const finalizingRef = useRef(false);
+  const callRef = useRef<CallHandle | null>(null);
+  const lasersRef = useRef<{ rep: LaserPoint | null; client: LaserPoint | null }>({
+    rep: null,
+    client: null,
+  });
 
-  const [isConnected, setIsConnected] = useState(false);
+  const [stage, setStage] = useState<Stage>("init");
   const [isFrontCamera, setIsFrontCamera] = useState(true);
-  const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [callState, setCallState] = useState<CallState | null>(null);
+  const [repHere, setRepHere] = useState(false);
 
-  // Point the preview <video> (and therefore the canvas draw loop) at a fresh
-  // camera stream for the given facing mode. The previous camera is released
-  // FIRST — many phones (most Android devices) refuse to open the second
-  // camera while the first is still active. The canvas keeps painting the last
-  // frame until the new stream arrives, so the recording is never interrupted.
+  // Acquire a camera for the given facing mode, releasing the previous one
+  // first (many phones refuse two open cameras). The canvas keeps painting the
+  // last frame, so the recording is never interrupted.
   const applyCamera = useCallback(async (facingMode: "user" | "environment") => {
     const constraints = (mode: "user" | "environment"): MediaStreamConstraints => ({
       video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -70,8 +85,6 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints(facingMode));
     } catch (err) {
-      // The requested camera would not open. Restore whatever camera does work
-      // so the customer is not left on a frozen frame, then report the failure.
       try {
         const other = facingMode === "user" ? "environment" : "user";
         cameraStreamRef.current = await navigator.mediaDevices.getUserMedia(
@@ -82,7 +95,7 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
           videoRef.current.play().catch(() => undefined);
         }
       } catch {
-        // no camera available at all
+        /* no camera at all */
       }
       throw err;
     }
@@ -93,126 +106,66 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
       video.srcObject = stream;
       await video.play().catch(() => undefined);
     }
+    const track = stream.getVideoTracks()[0];
+    if (track) await callRef.current?.replaceVideoTrack(track);
   }, []);
 
-  // One-time setup: acquire mic + camera, start the canvas draw loop, and
-  // start a single recorder that runs for the entire call.
-  useEffect(() => {
-    let cancelled = false;
-
-    const stopEverything = () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-      const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== "inactive") {
-        try {
-          recorder.stop();
-        } catch {
-          // already stopping
-        }
-      }
-      mediaRecorderRef.current = null;
-      [cameraStreamRef, audioStreamRef, canvasStreamRef].forEach((ref) => {
-        ref.current?.getTracks().forEach((track) => track.stop());
-        ref.current = null;
-      });
-    };
-
-    const initialize = async () => {
+  const finalize = useCallback(
+    async () => {
+      if (finalizingRef.current) return;
+      finalizingRef.current = true;
+      setStage("ending");
       try {
-        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-          throw new Error(
-            "Camera access requires HTTPS. Open this link over HTTPS or use localhost on the computer.",
-          );
+        const recorder = mediaRecorderRef.current;
+        if (recorder && recorder.state !== "inactive") {
+          await new Promise<void>((resolve) => {
+            recorder.addEventListener("stop", () => resolve(), { once: true });
+            try {
+              recorder.requestData();
+            } catch {
+              /* stop() flushes the tail */
+            }
+            recorder.stop();
+          });
         }
-
-        audioStreamRef.current = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
+        if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+        callRef.current?.close();
+        callRef.current = null;
+        [cameraStreamRef, micStreamRef, canvasStreamRef].forEach((ref) => {
+          ref.current?.getTracks().forEach((t) => t.stop());
+          ref.current = null;
         });
-        if (cancelled) return stopEverything();
+        void audioCtxRef.current?.close();
+        audioCtxRef.current = null;
 
-        await applyCamera("user");
-        if (cancelled) return stopEverything();
-
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        if (!video || !canvas) throw new Error("The recorder failed to start.");
-
-        await new Promise<void>((resolve) => {
-          if (video.videoWidth > 0) return resolve();
-          video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+        if (chunksRef.current.length === 0) {
+          throw new Error("Nothing was recorded.");
+        }
+        const type = mimeTypeRef.current || "video/webm";
+        const blob = new Blob(chunksRef.current, { type });
+        const res = await fetch(`/api/video-sessions/${videoSessionId}/upload`, {
+          method: "POST",
+          headers: { "content-type": type, "x-video-size": String(blob.size) },
+          body: blob,
         });
-        if (cancelled) return stopEverything();
-
-        canvas.width = video.videoWidth || 720;
-        canvas.height = video.videoHeight || 1280;
-        const ctx = canvas.getContext("2d");
-
-        const draw = () => {
-          const source = videoRef.current;
-          if (ctx && source && source.readyState >= 2) {
-            const { width: cw, height: ch } = canvas;
-            const vw = source.videoWidth || cw;
-            const vh = source.videoHeight || ch;
-            // cover-fit so a portrait/landscape camera swap never letterboxes
-            const scale = Math.max(cw / vw, ch / vh);
-            const dw = vw * scale;
-            const dh = vh * scale;
-            ctx.drawImage(source, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
-          }
-          rafRef.current = requestAnimationFrame(draw);
-        };
-        draw();
-
-        const canvasStream = canvas.captureStream(30);
-        canvasStreamRef.current = canvasStream;
-        const recordStream = new MediaStream([
-          ...canvasStream.getVideoTracks(),
-          ...(audioStreamRef.current?.getAudioTracks() ?? []),
-        ]);
-
-        const mimeType = supportedMimeType();
-        mimeTypeRef.current = mimeType;
-        const recorder = new MediaRecorder(
-          recordStream,
-          mimeType ? { mimeType } : undefined,
-        );
-        mediaRecorderRef.current = recorder;
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) chunksRef.current.push(event.data);
-        };
-        recorder.onerror = () => {
-          setError("Recording stopped unexpectedly. Please end the session and try again.");
-        };
-        recorder.start(1000);
-
-        setIsConnected(true);
-        setIsRecording(true);
-        setError(null);
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error || "Upload failed.");
+        }
+        setStage("done");
       } catch (err) {
-        if (cancelled) return;
-        const message =
-          err instanceof Error ? err.message : "Unable to access camera or microphone.";
-        setError(message);
-        setIsConnected(false);
-        stopEverything();
+        finalizingRef.current = false;
+        setError(err instanceof Error ? err.message : "Could not upload the recording.");
+        setStage("error");
       }
-    };
-
-    initialize();
-
-    return () => {
-      cancelled = true;
-      stopEverything();
-    };
-  }, [applyCamera]);
+    },
+    [videoSessionId],
+  );
 
   const switchCamera = useCallback(async () => {
-    if (isUploading || switchingRef.current) return;
+    if (switchingRef.current || stage !== "live") return;
+    void audioCtxRef.current?.resume().catch(() => undefined);
     switchingRef.current = true;
     const next = !isFrontCamera;
     try {
@@ -221,94 +174,302 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
       setError(null);
     } catch (err) {
       const detail = err instanceof Error && err.name ? ` (${err.name})` : "";
-      setError(`Unable to switch camera${detail}. Staying on the current one.`);
+      setError(`Couldn't switch camera${detail}. Staying on the current one.`);
     } finally {
       switchingRef.current = false;
     }
-  }, [applyCamera, isFrontCamera, isUploading]);
+  }, [applyCamera, isFrontCamera, stage]);
 
-  const handleEndSession = useCallback(async () => {
-    setIsUploading(true);
-    try {
-      const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== "inactive") {
-        await new Promise<void>((resolve) => {
-          recorder.addEventListener("stop", () => resolve(), { once: true });
-          try {
-            recorder.requestData();
-          } catch {
-            // ignore; stop() flushes the final chunk
-          }
-          recorder.stop();
-        });
+  const onAppMessage = useCallback(
+    (msg: AppMessage) => {
+      if (msg.type === "laser" && msg.from === "rep") {
+        lasersRef.current.rep = { x: msg.x, y: msg.y, active: msg.active, at: Date.now() };
+      } else if (msg.type === "camera" && msg.action === "flip" && msg.from === "rep") {
+        void switchCamera();
       }
-      setIsRecording(false);
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+    },
+    [switchCamera],
+  );
+  // startCall captures its callbacks once; route through a ref so incoming
+  // messages always hit the current switchCamera (which reads live state).
+  const onAppMessageRef = useRef(onAppMessage);
+  useEffect(() => {
+    onAppMessageRef.current = onAppMessage;
+  }, [onAppMessage]);
+
+  // --- one-time setup -------------------------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+
+    const teardown = () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      const rec = mediaRecorderRef.current;
+      if (rec && rec.state !== "inactive") {
+        try {
+          rec.stop();
+        } catch {
+          /* already stopping */
+        }
       }
-      [cameraStreamRef, audioStreamRef, canvasStreamRef].forEach((ref) => {
-        ref.current?.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current = null;
+      callRef.current?.close();
+      callRef.current = null;
+      [cameraStreamRef, micStreamRef, canvasStreamRef].forEach((ref) => {
+        ref.current?.getTracks().forEach((t) => t.stop());
         ref.current = null;
       });
+      void audioCtxRef.current?.close();
+      audioCtxRef.current = null;
+    };
 
-      if (chunksRef.current.length === 0) {
-        throw new Error("No video data was recorded.");
+    const init = async () => {
+      try {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          throw new Error(
+            "Camera access needs HTTPS. Open this link over HTTPS or use localhost on a computer.",
+          );
+        }
+
+        micStreamRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        if (cancelled) return teardown();
+
+        await applyCamera("user");
+        if (cancelled) return teardown();
+
+        const video = videoRef.current;
+        const recCanvas = recCanvasRef.current;
+        const overlay = overlayRef.current;
+        if (!video || !recCanvas || !overlay) throw new Error("The recorder failed to start.");
+
+        await new Promise<void>((resolve) => {
+          if (video.videoWidth > 0) return resolve();
+          video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+        });
+        if (cancelled) return teardown();
+
+        recCanvas.width = video.videoWidth || 720;
+        recCanvas.height = video.videoHeight || 1280;
+        const rctx = recCanvas.getContext("2d");
+        const octx = overlay.getContext("2d");
+
+        const draw = () => {
+          const src = videoRef.current;
+          const lasers = lasersRef.current;
+          if (rctx && src && src.readyState >= 2) {
+            const { width: cw, height: ch } = recCanvas;
+            const vw = src.videoWidth || cw;
+            const vh = src.videoHeight || ch;
+            const scale = Math.max(cw / vw, ch / vh);
+            rctx.drawImage(src, (cw - vw * scale) / 2, (ch - vh * scale) / 2, vw * scale, vh * scale);
+            for (const role of ["rep", "client"] as const) {
+              const pt = lasers[role];
+              if (pt) drawLaser(rctx, cw, ch, vw, vh, pt, LASER_COLOR[role]);
+            }
+          }
+          if (octx && src) {
+            const rect = overlay.getBoundingClientRect();
+            if (overlay.width !== rect.width || overlay.height !== rect.height) {
+              overlay.width = rect.width;
+              overlay.height = rect.height;
+            }
+            octx.clearRect(0, 0, overlay.width, overlay.height);
+            const vw = src.videoWidth || overlay.width;
+            const vh = src.videoHeight || overlay.height;
+            for (const role of ["rep", "client"] as const) {
+              const pt = lasers[role];
+              if (pt) drawLaser(octx, overlay.width, overlay.height, vw, vh, pt, LASER_COLOR[role]);
+            }
+          }
+          rafRef.current = requestAnimationFrame(draw);
+        };
+        draw();
+
+        // audio: one mix destination; local mic in now, rep's voice added later
+        const ac = new AudioContext();
+        audioCtxRef.current = ac;
+        void ac.resume().catch(() => undefined);
+        const dest = ac.createMediaStreamDestination();
+        mixDestRef.current = dest;
+        ac.createMediaStreamSource(micStreamRef.current).connect(dest);
+
+        const canvasStream = recCanvas.captureStream(30);
+        canvasStreamRef.current = canvasStream;
+        const recStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...dest.stream.getAudioTracks(),
+        ]);
+        const mimeType = supportedMimeType();
+        mimeTypeRef.current = mimeType;
+        const recorder = new MediaRecorder(recStream, mimeType ? { mimeType } : undefined);
+        mediaRecorderRef.current = recorder;
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunksRef.current.push(e.data);
+        };
+        recorder.onerror = () =>
+          setError("Recording stopped unexpectedly. Please end the call and try again.");
+        recorder.start(1000);
+
+        // live call (skipped when no signaling Worker is configured)
+        if (signalingUrl) {
+          const ice = await fetch("/api/turn")
+            .then((r) => r.json() as Promise<{ iceServers: RTCIceServer[] }>)
+            .catch(() => ({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }] }));
+          if (cancelled) return teardown();
+
+          callRef.current = startCall({
+            callId: videoSessionId,
+            role: "client",
+            signalingUrl,
+            iceServers: ice.iceServers,
+            events: {
+              onState: setCallState,
+              onPeerPresence: setRepHere,
+              onAppMessage: (m) => onAppMessageRef.current(m),
+              onRemoteStream: (stream) => {
+                if (remoteVideoRef.current) {
+                  remoteVideoRef.current.srcObject = stream;
+                  remoteVideoRef.current.play().catch(() => undefined);
+                }
+                const rep = stream.getAudioTracks()[0];
+                if (
+                  rep &&
+                  !repAudioMixedRef.current &&
+                  audioCtxRef.current &&
+                  mixDestRef.current
+                ) {
+                  repAudioMixedRef.current = true;
+                  audioCtxRef.current
+                    .createMediaStreamSource(new MediaStream([rep]))
+                    .connect(mixDestRef.current);
+                }
+              },
+            },
+          });
+          callRef.current.addLocalStream(
+            new MediaStream([
+              ...(cameraStreamRef.current?.getVideoTracks() ?? []),
+              ...(micStreamRef.current?.getAudioTracks() ?? []),
+            ]),
+          );
+        }
+
+        setStage("live");
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setError(
+          err instanceof Error ? err.message : "Couldn't start the camera or microphone.",
+        );
+        setStage("error");
+        teardown();
       }
+    };
 
-      const type = mimeTypeRef.current || "video/webm";
-      const videoBlob = new Blob(chunksRef.current, { type });
+    void init();
+    return () => {
+      cancelled = true;
+      teardown();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signalingUrl, videoSessionId]);
 
-      // Send the recording as the raw request body (not multipart) so it
-      // streams straight to R2 without being buffered.
-      const uploadResponse = await fetch(
-        `/api/video-sessions/${videoSessionId}/upload`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": type,
-            "x-video-size": String(videoBlob.size),
-          },
-          body: videoBlob,
-        },
-      );
-
-      if (!uploadResponse.ok) {
-        const errorData = (await uploadResponse
-          .json()
-          .catch(() => ({}))) as { error?: string };
-        throw new Error(errorData.error || "Video upload failed.");
-      }
-
-      alert(
-        "Your video has been successfully recorded and submitted for analysis. Thank you!",
-      );
-      window.location.href = "/";
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to upload video.";
-      setError(message);
-      setIsUploading(false);
+  // The rep was here and then left — wrap up and upload from the client side.
+  const prevRepHere = useRef(false);
+  useEffect(() => {
+    if (prevRepHere.current && !repHere && stage === "live") {
+      void finalize();
     }
-  }, [videoSessionId]);
+    prevRepHere.current = repHere;
+  }, [repHere, stage, finalize]);
+
+  // --- laser input --------------------------------------------------------
+  const sendLaser = useCallback((clientX: number, clientY: number, active: boolean) => {
+    // A pointer counts as the gesture some browsers need before audio flows.
+    void audioCtxRef.current?.resume().catch(() => undefined);
+    const video = videoRef.current;
+    if (!video) return;
+    const { x, y } = pointerToFrame(clientX, clientY, video);
+    lasersRef.current.client = { x, y, active, at: Date.now() };
+    callRef.current?.send({ type: "laser", x, y, active });
+  }, []);
+
+  const stageBusy = stage === "ending";
+
+  if (stage === "done") {
+    return (
+      <div className="video-call-container">
+        <div className="done-card">
+          <div className="done-mark" aria-hidden="true">✓</div>
+          <h1>Thanks — your walkthrough is in.</h1>
+          <p>{repEmail} has your recording and will follow up with an estimate. You can close this page.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (stage === "error") {
+    return (
+      <div className="video-call-container">
+        <div className="done-card">
+          <div className="done-mark done-mark--warn" aria-hidden="true">!</div>
+          <h1>The call couldn&rsquo;t continue</h1>
+          <p>{error ?? "Something went wrong."}</p>
+          <button className="button button--primary" onClick={() => window.location.reload()}>
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="video-call-container">
       <div className="video-call-header">
-        <h1>Video Walkthrough</h1>
-        <p>Connected with {repEmail}</p>
+        <h1>Live walkthrough</h1>
+        <p className="call-status">
+          {stage === "init"
+            ? "Starting your camera…"
+            : !signalingUrl
+              ? "Recording your walkthrough"
+              : repHere
+                ? `Connected with ${repEmail}`
+                : callState === "reconnecting"
+                  ? "Reconnecting…"
+                  : callState === "failed"
+                    ? "Couldn't reach the call — still recording your walkthrough"
+                    : `Waiting for ${repEmail} to join…`}
+        </p>
       </div>
 
       <div className="video-call-content">
         <div className="video-stream">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="video-element"
+          <video ref={videoRef} autoPlay playsInline muted className="video-element" />
+          <canvas
+            ref={overlayRef}
+            className="laser-overlay"
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              sendLaser(e.clientX, e.clientY, true);
+            }}
+            onPointerMove={(e) => {
+              if (e.buttons) sendLaser(e.clientX, e.clientY, true);
+            }}
+            onPointerUp={(e) => sendLaser(e.clientX, e.clientY, false)}
+            onPointerCancel={(e) => sendLaser(e.clientX, e.clientY, false)}
           />
-          <canvas ref={canvasRef} hidden />
-          {!isConnected && <div className="video-placeholder">Connecting camera...</div>}
+          <canvas ref={recCanvasRef} hidden />
+          {signalingUrl && (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className={`remote-pip${repHere ? "" : " remote-pip--empty"}`}
+            />
+          )}
+          {stage === "init" && <div className="video-placeholder">Starting camera…</div>}
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -317,26 +478,27 @@ export function VideoCallInterface({ videoSessionId, repEmail }: VideoCallInterf
           <button
             className="button button--secondary"
             onClick={switchCamera}
-            disabled={!isConnected || isUploading}
+            disabled={stage !== "live" || stageBusy}
           >
-            {isFrontCamera ? "📸 Switch to House View" : "📷 Switch to My Face"}
+            {isFrontCamera ? "📸 Show the room" : "🙂 Show my face"}
           </button>
-
           <button
             className="button button--primary"
-            onClick={handleEndSession}
-            disabled={!isConnected || isUploading}
+            onClick={() => finalize()}
+            disabled={stage !== "live" || stageBusy}
           >
-            {isUploading ? <>Uploading…</> : <>End Session &amp; Submit</>}
+            {stageBusy ? "Sending…" : "End & send"}
           </button>
         </div>
 
         <div className="video-info">
           <p className="recording-indicator">
-            {isRecording && !isUploading && "🔴 Recording..."}
-            {isUploading && "📤 Uploading video..."}
+            {stage === "live" && "🔴 Recording"}
+            {stageBusy && "📤 Sending your walkthrough…"}
           </p>
-          <p className="session-info">Your video is being recorded and will be analyzed for your estimate.</p>
+          <p className="session-info">
+            Drag on the video to point. This call is recorded for your estimate.
+          </p>
         </div>
       </div>
     </div>

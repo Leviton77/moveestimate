@@ -1,0 +1,14 @@
+# Local secrets for the Sites app. Copy to `.dev.vars` (gitignored) and fill in.
+# In production these are set as environment variables on the Sites deployment.
+
+# WebSocket origin of the signaling Worker (see signaling/README.md).
+# Leave empty to disable the live call and record the walkthrough solo.
+SIGNALING_URL="wss://moveestimate-signaling.<your-subdomain>.workers.dev"
+
+# Cloudflare Realtime TURN key — dashboard: Realtime > TURN > Create.
+# Without these the call falls back to STUN only (fails behind strict NAT).
+TURN_KEY_ID=""
+TURN_API_TOKEN=""
+
+# Existing rep allowlist (comma-separated ChatGPT emails).
+REP_EMAILS=""

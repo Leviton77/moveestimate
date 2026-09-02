@@ -9,8 +9,17 @@ interface VideoLinkGeneratorProps {
 export function VideoLinkGenerator({ repEmail }: VideoLinkGeneratorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [videoLink, setVideoLink] = useState<string | null>(null);
+  const [repPath, setRepPath] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setVideoLink(null);
+    setRepPath(null);
+    setCopied(false);
+    setError(null);
+  };
 
   const generateLink = async () => {
     try {
@@ -23,26 +32,35 @@ export function VideoLinkGenerator({ repEmail }: VideoLinkGeneratorProps) {
         body: JSON.stringify({ repEmail }),
       });
 
-      const data = (await response.json()) as { joinLink?: string; error?: string };
+      const data = (await response.json()) as {
+        joinLink?: string;
+        videoSessionId?: string;
+        error?: string;
+      };
       if (!response.ok) {
         throw new Error(data.error || "Failed to generate link");
       }
-      if (!data.joinLink) {
-        throw new Error("The server did not return a video link.");
+      if (!data.joinLink || !data.videoSessionId) {
+        throw new Error("The server did not return a call link.");
       }
       setVideoLink(data.joinLink);
+      setRepPath(`/video-call/${data.videoSessionId}/rep`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to generate video link";
+      const message = err instanceof Error ? err.message : "Failed to generate call link";
       setError(message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const copyToClipboard = () => {
-    if (videoLink) {
-      navigator.clipboard.writeText(videoLink);
-      alert("Video link copied to clipboard!");
+  const copyToClipboard = async () => {
+    if (!videoLink) return;
+    try {
+      await navigator.clipboard.writeText(videoLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Couldn't copy — select the link and copy it manually.");
     }
   };
 
@@ -53,20 +71,21 @@ export function VideoLinkGenerator({ repEmail }: VideoLinkGeneratorProps) {
         className="button button--quiet button--small"
         onClick={() => {
           setIsOpen(true);
-          setVideoLink(null);
-          setError(null);
+          reset();
         }}
       >
-        📞 Generate Video Call Link
+        📞 Start a live call
       </button>
 
       {isOpen && (
         <div className="video-link-modal" onClick={() => setIsOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Start Video Call Session</h2>
+              <h2>Live walkthrough call</h2>
               <button
+                type="button"
                 className="modal-close"
+                aria-label="Close"
                 onClick={() => setIsOpen(false)}
               >
                 ✕
@@ -76,47 +95,53 @@ export function VideoLinkGenerator({ repEmail }: VideoLinkGeneratorProps) {
             <div className="modal-body">
               {!videoLink ? (
                 <>
-                  <p>Generate a unique link to send to your customer for a live video walkthrough.</p>
-                  <p className="info-text">
-                    The customer will see their front camera by default and can switch to show their house.
-                    The session will automatically record and submit the video for AI analysis.
+                  <p>
+                    Create a call, send the client link, then join it yourself. You&rsquo;ll be
+                    on video together; the client&rsquo;s walkthrough and both voices are
+                    recorded, your camera isn&rsquo;t.
                   </p>
 
                   {error && <div className="error-message">{error}</div>}
 
                   <button
+                    type="button"
                     className="button button--primary"
                     onClick={generateLink}
                     disabled={isLoading}
                   >
-                    {isLoading ? "Generating..." : "Generate Link"}
+                    {isLoading ? "Creating…" : "Create call"}
                   </button>
                 </>
               ) : (
                 <>
-                  <p className="success-message">✓ Video call link created successfully!</p>
+                  <p className="success-message">✓ Call created.</p>
+
+                  <p className="instruction-text">1. Send this link to the client:</p>
                   <div className="link-container">
-                    <input
-                      type="text"
-                      value={videoLink}
-                      readOnly
-                      className="link-input"
-                    />
+                    <input type="text" value={videoLink} readOnly className="link-input" />
                     <button
+                      type="button"
                       className="button button--secondary"
                       onClick={copyToClipboard}
                     >
-                      Copy Link
+                      {copied ? "Copied" : "Copy"}
                     </button>
                   </div>
-                  <p className="instruction-text">
-                    Send this link to your customer. They can click it on their phone to start the video walkthrough.
-                  </p>
+
+                  <p className="instruction-text">2. Then join the call:</p>
+                  {repPath && (
+                    <a className="button button--primary" href={repPath}>
+                      Join the call
+                    </a>
+                  )}
+
+                  {error && <div className="error-message">{error}</div>}
 
                   <button
+                    type="button"
                     className="button button--secondary"
                     onClick={() => {
-                      setVideoLink(null);
+                      reset();
                       setIsOpen(false);
                     }}
                   >
