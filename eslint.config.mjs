@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local scratch/build output that is not part of the app source.
+    ".vinext/**",
+    ".wrangler/**",
+    "dist/**",
+    "outputs/**",
+    "work/**",
   ]),
 ]);
 

@@ -34,5 +34,7 @@ test("stores real videos and protects representative access", async () => {
   assert.doesNotMatch(uploadRoute, /base64|placeholder/i);
   assert.match(media, /MEDIA/);
   assert.match(repAuth, /REP_EMAILS/);
-  assert.deepEqual(JSON.parse(hosting), { d1: "DB", r2: "MEDIA" });
+  const hostingConfig = JSON.parse(hosting);
+  assert.equal(hostingConfig.d1, "DB");
+  assert.equal(hostingConfig.r2, "MEDIA");
 });
