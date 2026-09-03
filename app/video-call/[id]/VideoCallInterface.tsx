@@ -395,14 +395,18 @@ export function VideoCallInterface({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signalingUrl, videoSessionId]);
 
-  // The rep was here and then left — wrap up and upload from the client side.
+  // The call ended from the other side — the rep left (presence drop) or the
+  // call transport closed (rep hit "End call", socket gave up, …). Either way
+  // the recording still has to be wrapped up and uploaded from the client.
+  // finalize() guards against running twice.
   const prevRepHere = useRef(false);
   useEffect(() => {
-    if (prevRepHere.current && !repHere && stage === "live") {
+    const repLeft = prevRepHere.current && !repHere;
+    prevRepHere.current = repHere;
+    if ((repLeft || callState === "closed") && stage === "live") {
       void finalize();
     }
-    prevRepHere.current = repHere;
-  }, [repHere, stage, finalize]);
+  }, [repHere, callState, stage, finalize]);
 
   // --- laser input --------------------------------------------------------
   const sendLaser = useCallback((clientX: number, clientY: number, active: boolean) => {

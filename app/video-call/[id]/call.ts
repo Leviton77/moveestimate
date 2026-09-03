@@ -187,6 +187,13 @@ export function startCall(opts: {
           if (!ignoreOffer) throw err;
         }
       } else if (msg.type === "bye") {
+        // The peer ended the call deliberately. Surface it as a presence drop
+        // (not just a state change) so the client can wrap up and upload the
+        // recording the same way it does when the peer's socket simply drops.
+        if (peerPresent) {
+          peerPresent = false;
+          events.onPeerPresence?.(false);
+        }
         close();
       }
     } catch {
