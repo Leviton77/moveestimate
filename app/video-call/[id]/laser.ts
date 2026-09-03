@@ -4,6 +4,11 @@
  * Coordinates on the wire are normalized to the client's camera frame (0–1),
  * so the rep points at a spot on the frame and the client — and the recording —
  * render it in the same place regardless of each screen's size or aspect.
+ *
+ * The on-screen <video> elements use `object-fit: contain` (whole frame,
+ * letterboxed), so the projection below fits the frame *inside* the target
+ * (Math.min). The recording canvas is sized to the frame itself, so the same
+ * math is an identity there.
  */
 
 export type LaserPoint = { x: number; y: number; active: boolean; at: number };
@@ -27,7 +32,7 @@ export function pointerToFrame(
   const rect = video.getBoundingClientRect();
   const vw = video.videoWidth || rect.width;
   const vh = video.videoHeight || rect.height;
-  const scale = Math.max(rect.width / vw, rect.height / vh);
+  const scale = Math.min(rect.width / vw, rect.height / vh);
   const dw = vw * scale;
   const dh = vh * scale;
   const offX = (rect.width - dw) / 2;
@@ -42,9 +47,9 @@ export function pointerToFrame(
 
 /**
  * Draw a laser dot onto a 2D context whose drawing surface shows the source
- * frame `object-fit: cover`. When the target matches the frame aspect (the
- * recording canvas) this is a direct scale; for the rep's on-screen overlay it
- * reprojects through the same cover fit the <video> uses.
+ * frame `object-fit: contain`. On the on-screen overlay this letterboxes the
+ * frame inside the target; on the recording canvas (sized to the frame) it is
+ * a direct 1:1 scale.
  */
 export function drawLaser(
   ctx: CanvasRenderingContext2D,
@@ -57,7 +62,7 @@ export function drawLaser(
 ): void {
   if (!pt.active && Date.now() - pt.at > TRAIL_MS) return;
 
-  const scale = Math.max(targetW / frameW, targetH / frameH);
+  const scale = Math.min(targetW / frameW, targetH / frameH);
   const dw = frameW * scale;
   const dh = frameH * scale;
   const offX = (targetW - dw) / 2;

@@ -467,7 +467,8 @@ export function VideoCallInterface({
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              onLoadedMetadata={() => setRepVideoReady(true)}
+              onLoadedMetadata={(e) => setRepVideoReady(e.currentTarget.videoWidth > 0)}
+              onResize={(e) => setRepVideoReady(e.currentTarget.videoWidth > 0)}
               className={`remote-pip${repHere && repVideoReady ? "" : " remote-pip--empty"}`}
             />
           )}
