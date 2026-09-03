@@ -12,3 +12,8 @@ TURN_API_TOKEN=""
 
 # Existing rep allowlist (comma-separated ChatGPT emails).
 REP_EMAILS=""
+
+# Shared secret for the WordPress "Tom Moving Estimate" plugin integration.
+# The plugin sends it as `Authorization: Bearer` on /api/calls*, and it signs
+# the rep/client call-link tokens. Generate with: openssl rand -hex 32
+WP_SHARED_SECRET=""

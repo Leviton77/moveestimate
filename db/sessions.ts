@@ -87,6 +87,12 @@ export async function ensureDatabase() {
     "contact_email TEXT",
     "contact_note TEXT",
     "contact_source TEXT",
+    // WordPress ("Tom Moving Estimate") integration: rows created by the plugin
+    // are marked origin='wp' and tracked until the plugin has pulled them.
+    "origin TEXT",
+    "rep_name TEXT",
+    "wp_request_id TEXT",
+    "wp_ingested INTEGER NOT NULL DEFAULT 0",
   ]) {
     try {
       await db.prepare(`ALTER TABLE video_sessions ADD COLUMN ${column}`).run();
@@ -199,6 +205,11 @@ export type VideoSessionRecord = {
   contact_email: string | null;
   contact_note: string | null;
   contact_source: ContactSource | null;
+  origin: "wp" | "sites" | null;
+  rep_name: string | null;
+  wp_request_id: string | null;
+  /** 0 or 1 — whether the WordPress plugin has pulled this completed call. */
+  wp_ingested: number;
   created_at: string;
   updated_at: string;
 };
@@ -289,4 +300,56 @@ export async function attachVideoToSession(
       WHERE id = ?`)
     .bind(video.key, video.contentType, video.size, videoSessionId)
     .run();
+}
+
+// --- WordPress ("Tom Moving Estimate") integration ------------------------
+
+export async function createWpCall(input: {
+  repEmail: string;
+  repName: string;
+  contact?: { name?: string; phone?: string; email?: string };
+}) {
+  await ensureDatabase();
+  const id = crypto.randomUUID();
+  const name = input.contact?.name?.trim() || null;
+  const phone = input.contact?.phone?.trim() || null;
+  const email = input.contact?.email?.trim() || null;
+  const source = name || phone || email ? "rep-entered" : null;
+  await database()
+    .prepare(`INSERT INTO video_sessions
+      (id, rep_email, rep_name, origin, status,
+       contact_name, contact_phone, contact_email, contact_source)
+      VALUES (?, ?, ?, 'wp', 'waiting', ?, ?, ?, ?)`)
+    .bind(
+      id,
+      input.repEmail || "rep@tommoving.ca",
+      input.repName || "",
+      name,
+      phone,
+      email,
+      source,
+    )
+    .run();
+  return id;
+}
+
+export async function markWpIngested(id: string, wpRequestId: string) {
+  await ensureDatabase();
+  await database()
+    .prepare(`UPDATE video_sessions
+      SET wp_ingested = 1, wp_request_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`)
+    .bind(wpRequestId || null, id)
+    .run();
+}
+
+/** Completed WordPress calls the plugin has not pulled yet (cron backstop). */
+export async function listWpCallsAwaitingIngest() {
+  await ensureDatabase();
+  const result = await database()
+    .prepare(`SELECT * FROM video_sessions
+      WHERE origin = 'wp' AND status = 'uploaded' AND wp_ingested = 0
+      ORDER BY created_at DESC LIMIT 100`)
+    .all<VideoSessionRecord>();
+  return result.results;
 }

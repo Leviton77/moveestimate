@@ -23,6 +23,27 @@ test("ships the completed MoveEstimate product surface", async () => {
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
 
+test("exposes the WordPress live-call API, bearer-protected", async () => {
+  const [create, pull, ingested, recording, wpAuth, devVars] = await Promise.all([
+    readFile(new URL("app/api/calls/route.ts", root), "utf8"),
+    readFile(new URL("app/api/calls/[id]/route.ts", root), "utf8"),
+    readFile(new URL("app/api/calls/[id]/ingested/route.ts", root), "utf8"),
+    readFile(new URL("app/api/calls/[id]/recording/route.ts", root), "utf8"),
+    readFile(new URL("app/wp-auth.ts", root), "utf8"),
+    readFile(new URL(".dev.vars.example", root), "utf8"),
+  ]);
+  assert.match(create, /isWordPressRequest\(request\)/);
+  assert.match(create, /rep_url/);
+  assert.match(create, /client_url/);
+  assert.match(pull, /recording/);
+  assert.match(pull, /mintCallToken\(secret, id, "recording"/);
+  assert.match(ingested, /markWpIngested/);
+  assert.match(recording, /verifyCallToken/);
+  assert.match(recording, /content-range/);
+  assert.match(wpAuth, /WP_SHARED_SECRET/);
+  assert.match(devVars, /WP_SHARED_SECRET/);
+});
+
 test("stores real videos and protects representative access", async () => {
   const [uploadRoute, media, repAuth, hosting] = await Promise.all([
     readFile(new URL("app/api/sessions/[id]/video/route.ts", root), "utf8"),
