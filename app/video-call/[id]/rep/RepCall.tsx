@@ -28,10 +28,14 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
   const [selfReady, setSelfReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
+  const [contactAsked, setContactAsked] = useState(false);
+  const [contactGot, setContactGot] = useState(false);
 
   const onAppMessage = useCallback((msg: AppMessage) => {
     if (msg.type === "laser" && msg.from === "client") {
       lasersRef.current.client = { x: msg.x, y: msg.y, active: msg.active, at: Date.now() };
+    } else if (msg.type === "contact-submitted" && msg.from === "client") {
+      setContactGot(true);
     }
   }, []);
 
@@ -144,6 +148,11 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
     callRef.current?.send({ type: "camera", action: "flip" });
   }, []);
 
+  const askForContact = useCallback(() => {
+    callRef.current?.send({ type: "contact-form", action: "open" });
+    setContactAsked(true);
+  }, []);
+
   const endCall = useCallback(() => {
     callRef.current?.close();
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -226,6 +235,17 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
           >
             🔄 Flip their camera
           </button>
+          <button
+            className="button button--secondary"
+            onClick={askForContact}
+            disabled={!clientHere || contactGot}
+          >
+            {contactGot
+              ? "✓ Got their details"
+              : contactAsked
+                ? "Ask again for contact"
+                : "📇 Ask for contact info"}
+          </button>
           <button className="button button--primary" onClick={endCall}>
             End call
           </button>
@@ -235,6 +255,7 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
           <p className="session-info">
             Signed in as {repEmail}. Your face is shown to the client but isn&rsquo;t recorded —
             only your voice and their walkthrough are.
+            {contactGot && " The client just sent their contact details."}
           </p>
         </div>
       </div>
