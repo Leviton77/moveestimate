@@ -1,8 +1,13 @@
 import { env } from "cloudflare:workers";
 
+type ByteRange = { offset: number; length: number };
+
 type StoredMedia = {
   body: ReadableStream;
+  /** Total object size, regardless of any range requested. */
   size: number;
+  /** The slice actually returned, when a range was requested. */
+  range?: ByteRange;
   httpMetadata?: { contentType?: string };
 };
 
@@ -12,7 +17,7 @@ type MediaBucket = {
     body: ReadableStream,
     options?: { httpMetadata?: { contentType?: string } },
   ): Promise<unknown>;
-  get(key: string): Promise<StoredMedia | null>;
+  get(key: string, options?: { range?: ByteRange }): Promise<StoredMedia | null>;
   delete(key: string): Promise<void>;
 };
 

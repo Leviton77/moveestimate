@@ -22,6 +22,7 @@ export function VideoSessionDetail({ session }: { session: VideoSessionRecord })
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -44,6 +45,29 @@ export function VideoSessionDetail({ session }: { session: VideoSessionRecord })
       setError(err instanceof Error ? err.message : "Could not save.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (
+      !window.confirm(
+        "Permanently delete this call and its recording? This can't be undone.",
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/video-sessions/${session.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Could not delete.");
+      }
+      window.location.href = "/rep/video-sessions";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete.");
+      setDeleting(false);
     }
   }
 
@@ -154,6 +178,17 @@ export function VideoSessionDetail({ session }: { session: VideoSessionRecord })
               {saving ? "Saving…" : saved ? "Saved ✓" : "Save contact"}
             </button>
           </form>
+
+          <section className="panel">
+            <button
+              type="button"
+              className="button button--stop button--wide"
+              onClick={remove}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete call"}
+            </button>
+          </section>
         </aside>
       </div>
     </main>
