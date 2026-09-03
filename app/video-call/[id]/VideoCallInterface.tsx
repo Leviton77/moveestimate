@@ -69,6 +69,7 @@ export function VideoCallInterface({
   const [error, setError] = useState<string | null>(null);
   const [callState, setCallState] = useState<CallState | null>(null);
   const [repHere, setRepHere] = useState(false);
+  const [repVideoReady, setRepVideoReady] = useState(false);
 
   // Acquire a camera for the given facing mode, releasing the previous one
   // first (many phones refuse two open cameras). The canvas keeps painting the
@@ -466,7 +467,8 @@ export function VideoCallInterface({
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              className={`remote-pip${repHere ? "" : " remote-pip--empty"}`}
+              onLoadedMetadata={() => setRepVideoReady(true)}
+              className={`remote-pip${repHere && repVideoReady ? "" : " remote-pip--empty"}`}
             />
           )}
           {stage === "init" && <div className="video-placeholder">Starting camera…</div>}

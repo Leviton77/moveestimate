@@ -25,6 +25,7 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
 
   const [state, setState] = useState<CallState | null>(null);
   const [clientHere, setClientHere] = useState(false);
+  const [selfReady, setSelfReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
 
@@ -201,7 +202,14 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
             onPointerUp={(e) => sendLaser(e.clientX, e.clientY, false)}
             onPointerCancel={(e) => sendLaser(e.clientX, e.clientY, false)}
           />
-          <video ref={selfVideoRef} autoPlay playsInline muted className="remote-pip" />
+          <video
+            ref={selfVideoRef}
+            autoPlay
+            playsInline
+            muted
+            onLoadedMetadata={() => setSelfReady(true)}
+            className={`remote-pip${selfReady ? "" : " remote-pip--empty"}`}
+          />
           {!clientHere && !error && (
             <div className="video-placeholder">Waiting for the client…</div>
           )}
