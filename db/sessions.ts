@@ -237,6 +237,14 @@ export async function listVideoSessions() {
   return result.results;
 }
 
+export async function deleteVideoSession(id: string) {
+  await ensureDatabase();
+  await database()
+    .prepare("DELETE FROM video_sessions WHERE id = ?")
+    .bind(id)
+    .run();
+}
+
 export async function setVideoSessionContact(
   id: string,
   contact: VideoSessionContact,

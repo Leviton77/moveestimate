@@ -255,23 +255,28 @@ export function VideoCallInterface({
         });
         if (cancelled) return teardown();
 
-        recCanvas.width = video.videoWidth || 720;
-        recCanvas.height = video.videoHeight || 1280;
+        recCanvas.width = video.videoWidth || 1280;
+        recCanvas.height = video.videoHeight || 720;
         const rctx = recCanvas.getContext("2d");
         const octx = overlay.getContext("2d");
 
         const draw = () => {
           const src = videoRef.current;
           const lasers = lasersRef.current;
-          if (rctx && src && src.readyState >= 2) {
-            const { width: cw, height: ch } = recCanvas;
-            const vw = src.videoWidth || cw;
-            const vh = src.videoHeight || ch;
-            const scale = Math.max(cw / vw, ch / vh);
-            rctx.drawImage(src, (cw - vw * scale) / 2, (ch - vh * scale) / 2, vw * scale, vh * scale);
+          if (rctx && src && src.readyState >= 2 && src.videoWidth > 0) {
+            // Keep the recording canvas exactly the size of the current camera
+            // frame — including after a camera switch that changes the aspect —
+            // and draw it 1:1 so the recording matches what the client sees.
+            if (recCanvas.width !== src.videoWidth || recCanvas.height !== src.videoHeight) {
+              recCanvas.width = src.videoWidth;
+              recCanvas.height = src.videoHeight;
+            }
+            const cw = recCanvas.width;
+            const ch = recCanvas.height;
+            rctx.drawImage(src, 0, 0, cw, ch);
             for (const role of ["rep", "client"] as const) {
               const pt = lasers[role];
-              if (pt) drawLaser(rctx, cw, ch, vw, vh, pt, LASER_COLOR[role]);
+              if (pt) drawLaser(rctx, cw, ch, cw, ch, pt, LASER_COLOR[role]);
             }
           }
           if (octx && src) {
