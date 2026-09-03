@@ -77,6 +77,24 @@ export async function ensureDatabase() {
       "CREATE INDEX IF NOT EXISTS video_sessions_estimate_idx ON video_sessions (estimate_session_id)",
     ),
   ]);
+
+  // Contact columns were added after video_sessions shipped; existing tables
+  // need them backfilled. SQLite has no "ADD COLUMN IF NOT EXISTS", so try each
+  // and ignore the "duplicate column" error.
+  for (const column of [
+    "contact_name TEXT",
+    "contact_phone TEXT",
+    "contact_email TEXT",
+    "contact_note TEXT",
+    "contact_source TEXT",
+  ]) {
+    try {
+      await db.prepare(`ALTER TABLE video_sessions ADD COLUMN ${column}`).run();
+    } catch {
+      // column already exists
+    }
+  }
+
   initialized = true;
 }
 
@@ -166,6 +184,8 @@ export function isSessionId(value: string) {
 
 export type VideoSessionStatus = "waiting" | "active" | "completed" | "uploaded" | "failed";
 
+export type ContactSource = "client-form" | "rep-entered";
+
 export type VideoSessionRecord = {
   id: string;
   estimate_session_id: string | null;
@@ -174,8 +194,20 @@ export type VideoSessionRecord = {
   video_key: string | null;
   video_content_type: string | null;
   video_size: number | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  contact_note: string | null;
+  contact_source: ContactSource | null;
   created_at: string;
   updated_at: string;
+};
+
+export type VideoSessionContact = {
+  name: string;
+  phone: string;
+  email: string;
+  note: string;
 };
 
 export async function createVideoSession(repEmail: string, estimateSessionId?: string) {
@@ -195,6 +227,36 @@ export async function getVideoSession(id: string) {
     .prepare("SELECT * FROM video_sessions WHERE id = ? LIMIT 1")
     .bind(id)
     .first<VideoSessionRecord>();
+}
+
+export async function listVideoSessions() {
+  await ensureDatabase();
+  const result = await database()
+    .prepare("SELECT * FROM video_sessions ORDER BY created_at DESC LIMIT 250")
+    .all<VideoSessionRecord>();
+  return result.results;
+}
+
+export async function setVideoSessionContact(
+  id: string,
+  contact: VideoSessionContact,
+  source: ContactSource,
+) {
+  await ensureDatabase();
+  await database()
+    .prepare(`UPDATE video_sessions
+      SET contact_name = ?, contact_phone = ?, contact_email = ?,
+          contact_note = ?, contact_source = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`)
+    .bind(
+      contact.name || null,
+      contact.phone || null,
+      contact.email || null,
+      contact.note || null,
+      source,
+      id,
+    )
+    .run();
 }
 
 export async function updateVideoSessionStatus(id: string, status: VideoSessionStatus) {

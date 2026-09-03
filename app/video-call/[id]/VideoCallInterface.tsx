@@ -67,6 +67,8 @@ export function VideoCallInterface({
   const [stage, setStage] = useState<Stage>("init");
   const [isFrontCamera, setIsFrontCamera] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactSent, setContactSent] = useState(false);
   const [callState, setCallState] = useState<CallState | null>(null);
   const [repHere, setRepHere] = useState(false);
   const [repVideoReady, setRepVideoReady] = useState(false);
@@ -187,6 +189,8 @@ export function VideoCallInterface({
         lasersRef.current.rep = { x: msg.x, y: msg.y, active: msg.active, at: Date.now() };
       } else if (msg.type === "camera" && msg.action === "flip" && msg.from === "rep") {
         void switchCamera();
+      } else if (msg.type === "contact-form" && msg.action === "open" && msg.from === "rep") {
+        setContactOpen(true);
       }
     },
     [switchCamera],
@@ -397,6 +401,24 @@ export function VideoCallInterface({
     callRef.current?.send({ type: "laser", x, y, active });
   }, []);
 
+  const submitContact = useCallback(
+    async (fields: { name: string; phone: string; email: string; note: string }) => {
+      const res = await fetch(`/api/video-sessions/${videoSessionId}/contact`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || "Couldn't send your details.");
+      }
+      callRef.current?.send({ type: "contact-submitted" });
+      setContactSent(true);
+      setContactOpen(false);
+    },
+    [videoSessionId],
+  );
+
   const stageBusy = stage === "ending";
 
   if (stage === "done") {
@@ -473,9 +495,20 @@ export function VideoCallInterface({
             />
           )}
           {stage === "init" && <div className="video-placeholder">Starting camera…</div>}
+          {contactOpen && (
+            <ContactSheet
+              onSubmit={submitContact}
+              onSkip={() => setContactOpen(false)}
+            />
+          )}
         </div>
 
         {error && <div className="error-message">{error}</div>}
+        {contactSent && (
+          <p className="call-status" style={{ color: "#7ee08a" }}>
+            ✓ Your details were sent to {repEmail}.
+          </p>
+        )}
 
         <div className="video-controls">
           <button
@@ -505,5 +538,72 @@ export function VideoCallInterface({
         </div>
       </div>
     </div>
+  );
+}
+
+function ContactSheet({
+  onSubmit,
+  onSkip,
+}: {
+  onSubmit: (f: { name: string; phone: string; email: string; note: string }) => Promise<void>;
+  onSkip: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  return (
+    <form
+      className="contact-sheet"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!name && !phone && !email) {
+          setErr("Add at least a name, phone, or email.");
+          return;
+        }
+        setBusy(true);
+        setErr("");
+        try {
+          await onSubmit({ name, phone, email, note });
+        } catch (e2) {
+          setErr(e2 instanceof Error ? e2.message : "Couldn't send.");
+          setBusy(false);
+        }
+      }}
+    >
+      <h2>Your contact details</h2>
+      <p>Your rep asked for these so they can follow up with your estimate.</p>
+      <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <input
+        placeholder="Phone"
+        inputMode="tel"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+      />
+      <input
+        placeholder="Email"
+        inputMode="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <textarea
+        placeholder="Anything else (optional)"
+        rows={2}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+      />
+      {err && <p className="contact-sheet__err">{err}</p>}
+      <div className="contact-sheet__row">
+        <button type="button" className="button button--secondary" onClick={onSkip} disabled={busy}>
+          Not now
+        </button>
+        <button type="submit" className="button button--primary" disabled={busy}>
+          {busy ? "Sending…" : "Send to rep"}
+        </button>
+      </div>
+    </form>
   );
 }
