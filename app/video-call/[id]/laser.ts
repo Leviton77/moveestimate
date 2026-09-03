@@ -7,8 +7,8 @@
  *
  * The on-screen <video> elements use `object-fit: contain` (whole frame,
  * letterboxed), so the projection below fits the frame *inside* the target
- * (Math.min). The recording canvas is sized to the frame itself, so the same
- * math is an identity there.
+ * (Math.min). The recording canvas letterboxes the frame the same way, so the
+ * identical math applies there too.
  */
 
 export type LaserPoint = { x: number; y: number; active: boolean; at: number };
@@ -47,9 +47,8 @@ export function pointerToFrame(
 
 /**
  * Draw a laser dot onto a 2D context whose drawing surface shows the source
- * frame `object-fit: contain`. On the on-screen overlay this letterboxes the
- * frame inside the target; on the recording canvas (sized to the frame) it is
- * a direct 1:1 scale.
+ * frame `object-fit: contain` — letterboxed inside the target. Used for both
+ * the on-screen overlay and the fixed-size recording canvas.
  */
 export function drawLaser(
   ctx: CanvasRenderingContext2D,

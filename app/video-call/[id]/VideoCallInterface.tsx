@@ -255,8 +255,17 @@ export function VideoCallInterface({
         });
         if (cancelled) return teardown();
 
-        recCanvas.width = video.videoWidth || 1280;
-        recCanvas.height = video.videoHeight || 720;
+        // Fixed 720p recording surface. It must NOT be resized after the
+        // captureStream() call below: Firefox and iOS Safari pin the recorded
+        // track to the canvas size at capture time, so a later resize silently
+        // crops the recording to a strip. Instead the current camera frame is
+        // letterboxed (contain) into this fixed box every draw, so the whole
+        // frame is always recorded whatever the camera aspect — or a mid-call
+        // switch to a camera with a different one.
+        const REC_W = 1280;
+        const REC_H = 720;
+        recCanvas.width = REC_W;
+        recCanvas.height = REC_H;
         const rctx = recCanvas.getContext("2d");
         const octx = overlay.getContext("2d");
 
@@ -264,19 +273,19 @@ export function VideoCallInterface({
           const src = videoRef.current;
           const lasers = lasersRef.current;
           if (rctx && src && src.readyState >= 2 && src.videoWidth > 0) {
-            // Keep the recording canvas exactly the size of the current camera
-            // frame — including after a camera switch that changes the aspect —
-            // and draw it 1:1 so the recording matches what the client sees.
-            if (recCanvas.width !== src.videoWidth || recCanvas.height !== src.videoHeight) {
-              recCanvas.width = src.videoWidth;
-              recCanvas.height = src.videoHeight;
-            }
-            const cw = recCanvas.width;
-            const ch = recCanvas.height;
-            rctx.drawImage(src, 0, 0, cw, ch);
+            const vw = src.videoWidth;
+            const vh = src.videoHeight;
+            const scale = Math.min(REC_W / vw, REC_H / vh);
+            const dw = vw * scale;
+            const dh = vh * scale;
+            const dx = (REC_W - dw) / 2;
+            const dy = (REC_H - dh) / 2;
+            rctx.fillStyle = "#000";
+            rctx.fillRect(0, 0, REC_W, REC_H);
+            rctx.drawImage(src, 0, 0, vw, vh, dx, dy, dw, dh);
             for (const role of ["rep", "client"] as const) {
               const pt = lasers[role];
-              if (pt) drawLaser(rctx, cw, ch, cw, ch, pt, LASER_COLOR[role]);
+              if (pt) drawLaser(rctx, REC_W, REC_H, vw, vh, pt, LASER_COLOR[role]);
             }
           }
           if (octx && src) {

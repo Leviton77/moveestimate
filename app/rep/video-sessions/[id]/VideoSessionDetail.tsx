@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { VideoSessionRecord } from "../../../../db/sessions";
 
 function when(value: string) {
@@ -23,6 +23,36 @@ export function VideoSessionDetail({ session }: { session: VideoSessionRecord })
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // A MediaRecorder file has no duration in its header, so the browser reports
+  // duration as Infinity: the scrubber is inert and the native controls behave
+  // erratically (flash once, then hide for good). Once metadata is in, seek
+  // past the end so the browser scans the file for its real length — the video
+  // route serves range requests — then snap back to the start.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    let done = false;
+    const fix = () => {
+      if (done) return;
+      if (video.duration !== Infinity && !Number.isNaN(video.duration)) return;
+      done = true;
+      const onSeeked = () => {
+        video.removeEventListener("seeked", onSeeked);
+        video.currentTime = 0;
+      };
+      video.addEventListener("seeked", onSeeked);
+      video.currentTime = 1e7;
+    };
+    video.addEventListener("loadedmetadata", fix);
+    video.addEventListener("durationchange", fix);
+    if (video.readyState >= 1) fix();
+    return () => {
+      video.removeEventListener("loadedmetadata", fix);
+      video.removeEventListener("durationchange", fix);
+    };
+  }, [session.id]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -90,6 +120,7 @@ export function VideoSessionDetail({ session }: { session: VideoSessionRecord })
           <div className="review-video">
             {session.video_key ? (
               <video
+                ref={videoRef}
                 controls
                 playsInline
                 preload="metadata"
