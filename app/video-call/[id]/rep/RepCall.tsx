@@ -207,7 +207,8 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
             autoPlay
             playsInline
             muted
-            onLoadedMetadata={() => setSelfReady(true)}
+            onLoadedMetadata={(e) => setSelfReady(e.currentTarget.videoWidth > 0)}
+            onResize={(e) => setSelfReady(e.currentTarget.videoWidth > 0)}
             className={`remote-pip${selfReady ? "" : " remote-pip--empty"}`}
           />
           {!clientHere && !error && (
