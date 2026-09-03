@@ -209,7 +209,7 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
             muted
             onLoadedMetadata={(e) => setSelfReady(e.currentTarget.videoWidth > 0)}
             onResize={(e) => setSelfReady(e.currentTarget.videoWidth > 0)}
-            className={`remote-pip${clientHere && selfReady ? "" : " remote-pip--empty"}`}
+            className={`remote-pip${selfReady ? "" : " remote-pip--empty"}`}
           />
           {!clientHere && !error && (
             <div className="video-placeholder">Waiting for the client…</div>
