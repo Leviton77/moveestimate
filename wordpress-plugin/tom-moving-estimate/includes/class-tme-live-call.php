@@ -20,7 +20,7 @@ final class TME_Live_Call
 {
     private const CAPABILITY  = 'tme_manage_estimates';
     private const OPTION       = 'tme_live_call_settings';
-    private const START_TTL    = 7 * DAY_IN_SECONDS;
+    private const START_TTL     = 604800; // 7 days, in seconds
     private const CRON_HOOK     = 'tme_live_import_sweep';
     private const CRON_SCHEDULE = 'tme_five_minutes';
     private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i';
@@ -78,12 +78,14 @@ final class TME_Live_Call
 
     private static function base_url(): string
     {
-        return untrailingslashit((string) self::settings()['sites_base_url']);
+        return untrailingslashit(trim((string) self::settings()['sites_base_url']));
     }
 
     private static function shared_secret(): string
     {
-        return TME_Secrets::decrypt((string) self::settings()['shared_secret_enc']);
+        // trim() heals a value pasted into the settings field with stray
+        // whitespace or a trailing newline.
+        return trim(TME_Secrets::decrypt((string) self::settings()['shared_secret_enc']));
     }
 
     public static function is_configured(): bool
@@ -416,17 +418,17 @@ final class TME_Live_Call
         $current = self::settings();
         $next = array(
             'sites_base_url' => esc_url_raw(trim((string) wp_unslash($_POST['sites_base_url'] ?? ''))),
-            'twilio_sid'     => sanitize_text_field(wp_unslash($_POST['twilio_sid'] ?? '')),
-            'twilio_from'    => sanitize_text_field(wp_unslash($_POST['twilio_from'] ?? '')),
-            'country_code'   => sanitize_text_field(wp_unslash($_POST['country_code'] ?? '+1')),
+            'twilio_sid'     => trim(sanitize_text_field(wp_unslash($_POST['twilio_sid'] ?? ''))),
+            'twilio_from'    => trim(sanitize_text_field(wp_unslash($_POST['twilio_from'] ?? ''))),
+            'country_code'   => trim(sanitize_text_field(wp_unslash($_POST['country_code'] ?? '+1'))),
         );
 
-        $secret = (string) wp_unslash($_POST['shared_secret'] ?? '');
+        $secret = trim((string) wp_unslash($_POST['shared_secret'] ?? ''));
         $next['shared_secret_enc'] = $secret !== ''
             ? TME_Secrets::encrypt($secret)
             : (string) $current['shared_secret_enc'];
 
-        $token = (string) wp_unslash($_POST['twilio_token'] ?? '');
+        $token = trim((string) wp_unslash($_POST['twilio_token'] ?? ''));
         $next['twilio_token_enc'] = $token !== ''
             ? TME_Secrets::encrypt($token)
             : (string) $current['twilio_token_enc'];
@@ -667,7 +669,7 @@ final class TME_Live_Call
     private static function twilio_send(string $to, string $body)
     {
         $s = self::settings();
-        $token = TME_Secrets::decrypt((string) $s['twilio_token_enc']);
+        $token = trim(TME_Secrets::decrypt((string) $s['twilio_token_enc']));
         if (!$s['twilio_sid'] || !$token || !$s['twilio_from']) {
             return new WP_Error('tme_twilio_unconfigured', __('Add the Twilio SID, token and from-number in settings.', 'tom-moving-estimate'));
         }
