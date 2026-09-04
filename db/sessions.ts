@@ -97,6 +97,7 @@ export async function ensureDatabase() {
     "rep_name TEXT",
     "wp_request_id TEXT",
     "wp_ingested INTEGER NOT NULL DEFAULT 0",
+    "client_locale TEXT",
   ]) {
     try {
       await db.prepare(`ALTER TABLE video_sessions ADD COLUMN ${column}`).run();
@@ -215,6 +216,8 @@ export type VideoSessionRecord = {
   contact_source: ContactSource | null;
   origin: "wp" | "sites" | null;
   rep_name: string | null;
+  /** Language the client sees on the call page and contact form. */
+  client_locale: "en" | "fr" | null;
   wp_request_id: string | null;
   /** 0 or 1 — whether the WordPress plugin has pulled this completed call. */
   wp_ingested: number;
@@ -325,6 +328,7 @@ export async function attachVideoToSession(
 export async function createWpCall(input: {
   repEmail: string;
   repName: string;
+  clientLocale?: "en" | "fr";
   contact?: { name?: string; phone?: string; email?: string };
 }) {
   await ensureDatabase();
@@ -335,13 +339,14 @@ export async function createWpCall(input: {
   const source = name || phone || email ? "rep-entered" : null;
   await database()
     .prepare(`INSERT INTO video_sessions
-      (id, rep_email, rep_name, origin, status,
+      (id, rep_email, rep_name, client_locale, origin, status,
        contact_name, contact_phone, contact_email, contact_source)
-      VALUES (?, ?, ?, 'wp', 'waiting', ?, ?, ?, ?)`)
+      VALUES (?, ?, ?, ?, 'wp', 'waiting', ?, ?, ?, ?)`)
     .bind(
       id,
       input.repEmail || "rep@tommoving.ca",
       input.repName || "",
+      input.clientLocale === "fr" ? "fr" : "en",
       name,
       phone,
       email,

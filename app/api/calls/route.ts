@@ -29,6 +29,7 @@ export async function POST(request: Request) {
   const callId = await createWpCall({
     repEmail,
     repName: str(payload.rep_name, 200),
+    clientLocale: payload.client_locale === "fr" ? "fr" : "en",
     contact: {
       name: str(payload.client_name, 200),
       phone: str(payload.client_phone, 60),
