@@ -13,6 +13,27 @@ interface VideoCallInterfaceProps {
 
 type Stage = "init" | "live" | "ending" | "done" | "error";
 
+type ContactFields = {
+  name: string;
+  phone: string;
+  email: string;
+  note: string;
+  moveDate: string;
+  homeSize: string;
+  currentAddress: string;
+  destinationAddress: string;
+};
+
+const HOME_SIZES = [
+  "Studio",
+  "1 bedroom",
+  "2 bedrooms",
+  "3 bedrooms",
+  "4+ bedrooms",
+  "House",
+  "Storage unit",
+];
+
 /**
  * Pick a container/codec the current browser can actually record. Safari and
  * iOS do not support webm, so an unconditional "video/webm" mimeType throws in
@@ -426,7 +447,7 @@ export function VideoCallInterface({
   }, []);
 
   const submitContact = useCallback(
-    async (fields: { name: string; phone: string; email: string; note: string }) => {
+    async (fields: ContactFields) => {
       const res = await fetch(`/api/video-sessions/${videoSessionId}/contact`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -569,12 +590,16 @@ function ContactSheet({
   onSubmit,
   onSkip,
 }: {
-  onSubmit: (f: { name: string; phone: string; email: string; note: string }) => Promise<void>;
+  onSubmit: (f: ContactFields) => Promise<void>;
   onSkip: () => void;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [moveDate, setMoveDate] = useState("");
+  const [homeSize, setHomeSize] = useState("");
+  const [currentAddress, setCurrentAddress] = useState("");
+  const [destinationAddress, setDestinationAddress] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -584,14 +609,23 @@ function ContactSheet({
       className="contact-sheet"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!name && !phone && !email) {
-          setErr("Add at least a name, phone, or email.");
+        if (!name.trim()) {
+          setErr("Please add your name.");
           return;
         }
         setBusy(true);
         setErr("");
         try {
-          await onSubmit({ name, phone, email, note });
+          await onSubmit({
+            name,
+            phone,
+            email,
+            note,
+            moveDate,
+            homeSize,
+            currentAddress,
+            destinationAddress,
+          });
         } catch (e2) {
           setErr(e2 instanceof Error ? e2.message : "Couldn't send.");
           setBusy(false);
@@ -599,19 +633,49 @@ function ContactSheet({
       }}
     >
       <h2>Your contact details</h2>
-      <p>Your rep asked for these so they can follow up with your estimate.</p>
-      <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <p>Your rep asked for these so they can follow up with your estimate. Only your name is required.</p>
       <input
-        placeholder="Phone"
+        placeholder="Name *"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        required
+      />
+      <input
+        placeholder="Phone (optional)"
         inputMode="tel"
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
       />
       <input
-        placeholder="Email"
+        placeholder="Email (optional)"
         inputMode="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
+      />
+      <label>
+        <span>Expected moving date (optional)</span>
+        <input type="date" value={moveDate} onChange={(e) => setMoveDate(e.target.value)} />
+      </label>
+      <label>
+        <span>Home size (optional)</span>
+        <select value={homeSize} onChange={(e) => setHomeSize(e.target.value)}>
+          <option value="">Choose one…</option>
+          {HOME_SIZES.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </label>
+      <input
+        placeholder="Current address (optional)"
+        value={currentAddress}
+        onChange={(e) => setCurrentAddress(e.target.value)}
+      />
+      <input
+        placeholder="Destination address (optional)"
+        value={destinationAddress}
+        onChange={(e) => setDestinationAddress(e.target.value)}
       />
       <textarea
         placeholder="Anything else (optional)"

@@ -86,6 +86,10 @@ export async function ensureDatabase() {
     "contact_phone TEXT",
     "contact_email TEXT",
     "contact_note TEXT",
+    "contact_move_date TEXT",
+    "contact_home_size TEXT",
+    "contact_current_address TEXT",
+    "contact_destination_address TEXT",
     "contact_source TEXT",
     // WordPress ("Tom Moving Estimate") integration: rows created by the plugin
     // are marked origin='wp' and tracked until the plugin has pulled them.
@@ -204,6 +208,10 @@ export type VideoSessionRecord = {
   contact_phone: string | null;
   contact_email: string | null;
   contact_note: string | null;
+  contact_move_date: string | null;
+  contact_home_size: string | null;
+  contact_current_address: string | null;
+  contact_destination_address: string | null;
   contact_source: ContactSource | null;
   origin: "wp" | "sites" | null;
   rep_name: string | null;
@@ -219,6 +227,10 @@ export type VideoSessionContact = {
   phone: string;
   email: string;
   note: string;
+  moveDate: string;
+  homeSize: string;
+  currentAddress: string;
+  destinationAddress: string;
 };
 
 export async function createVideoSession(repEmail: string, estimateSessionId?: string) {
@@ -264,14 +276,20 @@ export async function setVideoSessionContact(
   await ensureDatabase();
   await database()
     .prepare(`UPDATE video_sessions
-      SET contact_name = ?, contact_phone = ?, contact_email = ?,
-          contact_note = ?, contact_source = ?, updated_at = CURRENT_TIMESTAMP
+      SET contact_name = ?, contact_phone = ?, contact_email = ?, contact_note = ?,
+          contact_move_date = ?, contact_home_size = ?,
+          contact_current_address = ?, contact_destination_address = ?,
+          contact_source = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`)
     .bind(
       contact.name || null,
       contact.phone || null,
       contact.email || null,
       contact.note || null,
+      contact.moveDate || null,
+      contact.homeSize || null,
+      contact.currentAddress || null,
+      contact.destinationAddress || null,
       source,
       id,
     )
