@@ -240,9 +240,9 @@ final class TME_Live_Call
         ?>
         <div class="tme-table-card" style="padding:20px;max-width:720px">
             <h2><?php esc_html_e('Call ready', 'tom-moving-estimate'); ?></h2>
-            <p><a class="button button-primary button-hero" href="<?php echo esc_url($rep_url); ?>"><?php esc_html_e('Open the call', 'tom-moving-estimate'); ?></a></p>
-            <p class="description"><?php esc_html_e('Opens in this tab. If you’d rather run it in a new tab or window, copy the link below and open it yourself instead of using this button.', 'tom-moving-estimate'); ?></p>
+            <p class="description"><strong><?php esc_html_e('Recommended: copy this link and paste it into a new browser tab yourself (Ctrl/Cmd+T, paste, Enter).', 'tom-moving-estimate'); ?></strong> <?php esc_html_e('On some browsers, clicking a link straight into the call can cause the tab to close itself the moment the call ends, with no way back to Finish in Tom Estimator. Pasting the link into a tab you opened yourself has not shown that problem.', 'tom-moving-estimate'); ?></p>
             <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($rep_url); ?>"></p>
+            <p class="description"><?php esc_html_e('Or, if you\'d rather just click through:', 'tom-moving-estimate'); ?> <a class="button button-primary" href="<?php echo esc_url($rep_url); ?>"><?php esc_html_e('Open the call', 'tom-moving-estimate'); ?></a></p>
 
             <h3><?php esc_html_e('Send the customer their link', 'tom-moving-estimate'); ?></h3>
             <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($client_url); ?>"></p>
