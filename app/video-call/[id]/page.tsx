@@ -1,26 +1,34 @@
-import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { env } from "cloudflare:workers";
 import { VideoCallInterface } from "./VideoCallInterface";
-import { getVideoSession } from "../../../db/sessions";
+import { getVideoSession, isSessionId } from "../../../db/sessions";
+import { verifyCallLinkToken } from "../../wp-auth";
 
 export const metadata: Metadata = { title: "Live walkthrough" };
 export const dynamic = "force-dynamic";
 
-function isVideoSessionId(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
 export default async function VideoCallPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ t?: string }>;
 }) {
   const { id } = await params;
-  const session = isVideoSessionId(id) ? await getVideoSession(id) : null;
+  const { t } = await searchParams;
+  const session = isSessionId(id) ? await getVideoSession(id) : null;
+  const authorized = session ? await verifyCallLinkToken(t, id, "client") : false;
 
-  if (!session) {
-    redirect("/");
+  if (!session || !authorized) {
+    return (
+      <main className="video-call-page">
+        <div className="done-card">
+          <div className="done-mark done-mark--warn" aria-hidden="true">!</div>
+          <h1>This link isn&rsquo;t valid</h1>
+          <p>It may have expired. Contact your Tom Moving representative for a new one.</p>
+        </div>
+      </main>
+    );
   }
 
   const signalingUrl = (env as unknown as { SIGNALING_URL?: string }).SIGNALING_URL ?? "";
@@ -29,7 +37,7 @@ export default async function VideoCallPage({
     <main className="video-call-page">
       <VideoCallInterface
         videoSessionId={id}
-        repEmail={session.rep_email}
+        repEmail={session.rep_name || session.rep_email}
         signalingUrl={signalingUrl}
       />
     </main>

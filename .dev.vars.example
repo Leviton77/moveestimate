@@ -10,10 +10,12 @@ SIGNALING_URL="wss://moveestimate-signaling.<your-subdomain>.workers.dev"
 TURN_KEY_ID=""
 TURN_API_TOKEN=""
 
-# Existing rep allowlist (comma-separated ChatGPT emails).
-REP_EMAILS=""
-
 # Shared secret for the WordPress "Tom Moving Estimate" plugin integration.
 # The plugin sends it as `Authorization: Bearer` on /api/calls*, and it signs
-# the rep/client call-link tokens. Generate with: openssl rand -hex 32
+# the rep/client call-link tokens (auth for the call pages — there is no more
+# ChatGPT rep sign-in). Generate with: openssl rand -hex 32
 WP_SHARED_SECRET=""
+
+# Base WordPress admin URL, used only to render the rep's "Finish in Tom
+# Estimator" link after a call ends. No trailing slash.
+WP_ADMIN_URL="https://tommoving.ca/wp-admin"

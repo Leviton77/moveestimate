@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startCall, type AppMessage, type CallHandle, type CallState } from "../call";
 import { drawLaser, LASER_COLOR, pointerToFrame, type LaserPoint } from "../laser";
@@ -9,9 +8,12 @@ interface RepCallProps {
   callId: string;
   repEmail: string;
   signalingUrl: string;
+  /** Base WordPress admin URL (e.g. https://tommoving.ca/wp-admin), for the
+   * "Finish in Tom Estimator" link. Empty if WP_ADMIN_URL isn't configured. */
+  wpAdminUrl: string;
 }
 
-export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
+export function RepCall({ callId, repEmail, signalingUrl, wpAdminUrl }: RepCallProps) {
   const selfVideoRef = useRef<HTMLVideoElement>(null);
   const clientVideoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -161,18 +163,29 @@ export function RepCall({ callId, repEmail, signalingUrl }: RepCallProps) {
   }, []);
 
   if (ended) {
+    const importUrl = wpAdminUrl
+      ? `${wpAdminUrl.replace(/\/+$/, "")}/admin-post.php?action=tme_live_import&call_id=${encodeURIComponent(callId)}`
+      : "";
     return (
       <div className="video-call-container">
         <div className="done-card">
           <div className="done-mark" aria-hidden="true">✓</div>
           <h1>Call ended</h1>
           <p>
-            The client&rsquo;s device is uploading the recording now. It will appear in your
-            estimate requests shortly.
+            The client&rsquo;s device is uploading the recording now. Once it&rsquo;s done,
+            finish up in Tom Estimator to bring the recording — and the client&rsquo;s contact
+            details — into your estimate queue.
           </p>
-          <Link className="button button--primary" href="/rep/dashboard">
-            Back to dashboard
-          </Link>
+          {importUrl ? (
+            <a className="button button--primary" href={importUrl}>
+              Finish in Tom Estimator
+            </a>
+          ) : (
+            <p className="error-message">
+              This Sites deployment has no WP_ADMIN_URL configured — ask your admin to set it,
+              or import this call from WordPress&rsquo;s Live Walkthrough sweep in a few minutes.
+            </p>
+          )}
         </div>
       </div>
     );

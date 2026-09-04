@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { SiteHeader } from "./components/SiteHeader";
 
 export default function Home() {
@@ -17,7 +16,7 @@ export default function Home() {
               Tom Moving reviews the real scope of your move and sends a clear estimate within one business day.
             </p>
             <div className="button-row">
-              <Link className="button button--primary" href="/estimate">Start my free estimate</Link>
+              <a className="button button--primary" href="https://tommoving.ca/estimate/">Start my free estimate</a>
               <a className="button button--quiet" href="#how-it-works">See how it works</a>
             </div>
             <div className="trust-row" aria-label="Estimate benefits">
@@ -58,13 +57,13 @@ export default function Home() {
         <section className="shell section final-cta">
           <p className="eyebrow">Ready when you are</p>
           <h2>Make the first step of your move the easiest one.</h2>
-          <Link className="button button--primary" href="/estimate">Get my free estimate</Link>
+          <a className="button button--primary" href="https://tommoving.ca/estimate/">Get my free estimate</a>
         </section>
       </main>
       <footer className="site-footer">
         <div className="shell site-footer__inner">
           <p>© 2026 Tom Moving. Ottawa–Gatineau.</p>
-          <div><Link href="/estimate">Get estimate</Link><Link href="/rep">Rep portal</Link></div>
+          <div><a href="https://tommoving.ca/estimate/">Get estimate</a></div>
         </div>
       </footer>
     </>
