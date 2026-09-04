@@ -191,9 +191,21 @@ export function RepCall({ callId, repEmail, signalingUrl, wpAdminUrl }: RepCallP
             details — into your estimate queue.
           </p>
           {importUrl ? (
-            <a className="button button--primary" href={importUrl}>
-              Finish in Tom Estimator
-            </a>
+            <>
+              <a className="button button--primary" href={importUrl}>
+                Finish in Tom Estimator
+              </a>
+              <p style={{ fontSize: "0.85rem" }}>
+                If that doesn&rsquo;t work, copy this link and paste it into a tab where
+                you&rsquo;re logged into WordPress:
+              </p>
+              <input
+                className="done-card__link"
+                readOnly
+                value={importUrl}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+            </>
           ) : (
             <p className="error-message">
               This Sites deployment has no WP_ADMIN_URL configured — ask your admin to set it,

@@ -298,6 +298,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy); box-shado
   background: #1f7a4d; color: #fff;
 }
 .video-call-container .done-mark--warn { background: #b23b36; }
+.video-call-container .done-card__link {
+  width: 100%; padding: 0.6rem 0.8rem; border-radius: 0.5rem;
+  border: 1px solid #3a3f47; background: #14171c; color: #dfe3e8;
+  font: inherit; font-size: 0.85rem; text-align: center;
+}
 .video-call-container a.button {
   display: inline-flex; align-items: center; justify-content: center;
   text-decoration: none;
