@@ -133,8 +133,6 @@ export function VideoCallInterface({
         }
         if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
-        callRef.current?.close();
-        callRef.current = null;
         [cameraStreamRef, micStreamRef, canvasStreamRef].forEach((ref) => {
           ref.current?.getTracks().forEach((t) => t.stop());
           ref.current = null;
@@ -156,6 +154,14 @@ export function VideoCallInterface({
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error || "Upload failed.");
         }
+        // Only now tell the rep the call is over. The rep's screen reacts to
+        // this (a "bye" over the transport) by showing "Finish in Tom
+        // Estimator" immediately — closing the transport any earlier let the
+        // rep click through before the recording was actually uploaded,
+        // which WordPress correctly (but confusingly) reported as "not ready
+        // yet".
+        callRef.current?.close();
+        callRef.current = null;
         setStage("done");
       } catch (err) {
         finalizingRef.current = false;
