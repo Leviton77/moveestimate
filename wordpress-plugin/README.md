@@ -50,12 +50,39 @@ notes + status) and the 30-day retention path unchanged.
 - **Shared secret** — must equal `WP_SHARED_SECRET` on the Sites deployment
 - **Twilio** SID / auth token / from-number — only needed for the "Text the link" button
 
+## 1.2.0-rc2 / rc3 — staging-testing fixes
+
+Found while staging-testing PR #12 end to end (auth worked, a real call recorded,
+uploaded, and imported into a new "Live walkthrough" estimate):
+
+- **rc2** — `TME_Live_Call::shared_secret()` / `base_url()` now `trim()` the
+  stored values, and `handle_save_settings()` trims on save too. A secret
+  pasted into the settings field with stray whitespace was silently rejected
+  by the Sites API's exact-match bearer check ("Not authorized").
+- **rc3** — the video review screen's **laser** tool only ever flashed while
+  held and was never saved, which made it useless on this screen (there's no
+  second viewer to see a live-only pointer during solo review, unlike the
+  laser on an actual call). Click/tap with the laser tool now drops a saved
+  marker at that moment in the video, same as drawings and notes:
+  - `assets/js/admin.js`: `finishPointer()` pushes a `type: 'laser'`
+    annotation on release; `draw()` renders saved laser points the same way
+    it renders the live one (factored into `drawLaserDot()`); the annotation
+    list labels them "Laser point".
+  - `includes/class-tme-admin.php`: `sanitize_annotations()` was silently
+    dropping any type other than `draw`/`note` — `laser` (x/y/time, no text)
+    is now accepted and clamped like the others. Also fixed a pre-existing
+    `E_WARNING` (undefined `size` key) in the `draw` branch, found by the new
+    test's regression case.
+
 ## Checks
 
 - `php -l` clean on all files.
 - `php tests/live-call-harness.php` (from the repo root) — helper-logic checks
   (phone → E.164, link message, settings, cron schedule). Needs `mbstring` or
   the polyfill the harness declares.
+- `php tests/annotations-harness.php` — `sanitize_annotations()` checks:
+  laser round-trips, coordinates clamp 0-100, note/draw regressions, unknown
+  types still rejected.
 - API contract matches the Sites `/api/calls*` smoke in `feat/wp-live-call-api`.
 - **Not yet run on a real WordPress** — verify on GoDaddy staging: DB upgrade,
   the admin screens, a real call → import → row + R2 object + retention.
