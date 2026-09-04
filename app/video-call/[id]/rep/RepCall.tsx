@@ -172,6 +172,7 @@ export function RepCall({ callId, repEmail, signalingUrl, wpAdminUrl }: RepCallP
   useEffect(() => {
     const clientLeft = prevClientHere.current && !clientHere;
     prevClientHere.current = clientHere;
+    console.info("[RepCall] presence/state effect", { clientHere, state, clientLeft });
     if (clientLeft || state === "closed") endCall();
   }, [clientHere, state, endCall]);
 

@@ -71,10 +71,16 @@ export function startCall(opts: {
 
   // --- signaling transport -------------------------------------------------
 
+  const log = (...args: unknown[]) => console.info(`[call:${role}]`, ...args);
+
   function wsSend(obj: unknown) {
     const line = JSON.stringify(obj);
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(line);
-    else outbox.push(line);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(line);
+    } else {
+      log("queued (ws not open, readyState=" + (ws ? ws.readyState : "null") + ")", obj);
+      outbox.push(line);
+    }
   }
 
   function connectWs() {
@@ -83,6 +89,7 @@ export function startCall(opts: {
     ws = new WebSocket(`${base}/call/${callId}?role=${role}`);
 
     ws.onopen = () => {
+      log("ws open");
       wsRetries = 0;
       setState(peerPresent ? "connected" : "waiting");
       while (outbox.length) ws!.send(outbox.shift()!);
@@ -95,10 +102,12 @@ export function startCall(opts: {
       } catch {
         return;
       }
+      log("received", msg.type, msg);
       routeIncoming(msg);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
+      log("ws closed", { code: ev.code, reason: ev.reason, closedByUs: closed });
       if (closed) return;
       if (wsRetries < MAX_WS_RETRIES) {
         wsRetries += 1;
@@ -109,7 +118,10 @@ export function startCall(opts: {
       }
     };
 
-    ws.onerror = () => ws?.close();
+    ws.onerror = (ev) => {
+      log("ws error", ev);
+      ws?.close();
+    };
   }
 
   // --- message routing ---------------------------------------------------
@@ -128,12 +140,14 @@ export function startCall(opts: {
       return;
     }
     if (type === "peer-left") {
+      log("peer-left -> presence false");
       peerPresent = false;
       events.onPeerPresence?.(false);
       setState("waiting");
       return;
     }
     if (type === "room-full") {
+      log("room-full");
       setState("failed");
       return;
     }
@@ -147,6 +161,7 @@ export function startCall(opts: {
 
   function markPeerPresent() {
     if (peerPresent) return;
+    log("peer present");
     peerPresent = true;
     events.onPeerPresence?.(true);
     setState("connected");
@@ -190,6 +205,7 @@ export function startCall(opts: {
         // The peer ended the call deliberately. Surface it as a presence drop
         // (not just a state change) so the client can wrap up and upload the
         // recording the same way it does when the peer's socket simply drops.
+        log("bye -> presence false, closing");
         if (peerPresent) {
           peerPresent = false;
           events.onPeerPresence?.(false);
@@ -252,11 +268,12 @@ export function startCall(opts: {
     },
     close() {
       if (closed) return;
+      log("close() called, ws readyState=" + (ws ? ws.readyState : "null"));
       closed = true;
       try {
         wsSend({ type: "bye" });
-      } catch {
-        /* best effort */
+      } catch (err) {
+        log("bye send threw", err);
       }
       dataChannel?.close();
       ws?.close();
