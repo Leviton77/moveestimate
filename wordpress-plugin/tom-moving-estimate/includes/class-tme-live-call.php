@@ -396,7 +396,15 @@ final class TME_Live_Call
 
         $result = self::import_one($call_id);
         if (is_wp_error($result)) {
-            wp_safe_redirect(self::notice_url($result->get_error_message(), 'error'));
+            // Keep ?call= on the bounce-back so the page shows the call's
+            // links/status again instead of falling through to a blank
+            // "start a new call" form -- landing there read as an empty
+            // page with nothing explaining what happened.
+            wp_safe_redirect(self::notice_url(
+                $result->get_error_message(),
+                'error',
+                array('call' => $call_id)
+            ));
             exit;
         }
         wp_safe_redirect(add_query_arg(array(
@@ -475,7 +483,7 @@ final class TME_Live_Call
         $status = (string) ($call['status'] ?? '');
         $recording = isset($call['recording']) && is_array($call['recording']) ? $call['recording'] : null;
         if (!in_array($status, array('uploaded', 'completed'), true) || !$recording) {
-            return $done(new WP_Error('tme_live_not_ready', __('The recording is not ready yet. Try again in a moment.', 'tom-moving-estimate')));
+            return $done(new WP_Error('tme_live_not_ready', __('The recording isn\'t uploaded yet. If the call just ended, wait a minute and try Finish again — it will also be picked up automatically within a few minutes. If the customer closed their browser instead of ending the call normally, the recording never uploaded and can\'t be recovered.', 'tom-moving-estimate')));
         }
 
         if (!TME_Plugin::is_configured()) {
