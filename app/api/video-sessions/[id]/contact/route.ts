@@ -3,7 +3,6 @@ import {
   setVideoSessionContact,
   type VideoSessionContact,
 } from "../../../../../db/sessions";
-import { getRepAccess } from "../../../../rep-auth";
 
 function isVideoSessionId(value: unknown): value is string {
   return (
@@ -48,27 +47,5 @@ export async function POST(
     );
   }
   await setVideoSessionContact(id, contact, "client-form");
-  return Response.json({ ok: true });
-}
-
-/**
- * Rep-entered contact details from the review page. Rep auth required.
- */
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const access = await getRepAccess();
-  if (!access.authorized) {
-    return Response.json({ error: "Not authorized." }, { status: access.user ? 403 : 401 });
-  }
-
-  const { id } = await context.params;
-  if (!isVideoSessionId(id) || !(await getVideoSession(id))) {
-    return Response.json({ error: "Video session not found." }, { status: 404 });
-  }
-
-  const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  await setVideoSessionContact(id, readContact(payload), "rep-entered");
   return Response.json({ ok: true });
 }

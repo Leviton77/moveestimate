@@ -5,7 +5,7 @@
  * `cloudflare:workers` import and can be unit-tested on its own.
  */
 import { env } from "cloudflare:workers";
-import { bearerToken, safeEqual } from "./call-token";
+import { bearerToken, safeEqual, verifyCallToken, type CallScope } from "./call-token";
 
 type RuntimeEnv = { WP_SHARED_SECRET?: string };
 
@@ -18,6 +18,22 @@ export function isWordPressRequest(request: Request): boolean {
   const secret = wpSharedSecret();
   if (!secret) return false;
   return safeEqual(bearerToken(request) ?? "", secret);
+}
+
+/**
+ * Gate the client/rep call pages: valid only for the exact call id and scope
+ * it was minted for. Replaces ChatGPT sign-in — the token, not a login,
+ * proves the visitor was handed this link by the WordPress plugin.
+ */
+export async function verifyCallLinkToken(
+  token: string | undefined,
+  callId: string,
+  scope: CallScope,
+): Promise<boolean> {
+  const secret = wpSharedSecret();
+  if (!secret || !token) return false;
+  const claims = await verifyCallToken(secret, token);
+  return !!claims && claims.cid === callId && claims.scp === scope;
 }
 
 /** Public origin to build rep/client call links against (mirrors app/layout.tsx). */
