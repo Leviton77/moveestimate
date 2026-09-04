@@ -524,14 +524,23 @@ final class TME_Live_Call
         $settings = TME_Plugin::settings();
         $expires = gmdate('Y-m-d H:i:s', $uploaded_ts + ((int) $settings['retention_days'] * DAY_IN_SECONDS));
 
+        // The DB column is a NOT NULL date; the client's form is optional, so
+        // fall back to today when they didn't give one (or gave something
+        // malformed -- the Sites API already validates the format, but don't
+        // trust it blindly here either).
+        $move_date = (string) ($contact['move_date'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $move_date)) {
+            $move_date = gmdate('Y-m-d');
+        }
+
         $row = TME_DB::create(array(
             'client_name'         => self::clip((string) ($contact['name'] ?? ''), 120) ?: __('Live walkthrough', 'tom-moving-estimate'),
             'email'               => self::clip(sanitize_email((string) ($contact['email'] ?? '')), 190),
             'phone'               => self::clip((string) ($contact['phone'] ?? ''), 40),
-            'move_date'           => gmdate('Y-m-d'),
-            'current_address'     => '',
-            'destination_address' => '',
-            'estimated_size'      => '',
+            'move_date'           => $move_date,
+            'current_address'     => self::clip((string) ($contact['current_address'] ?? ''), 255),
+            'destination_address' => self::clip((string) ($contact['destination_address'] ?? ''), 255),
+            'estimated_size'      => self::clip((string) ($contact['home_size'] ?? ''), 32),
             'special_items'       => self::clip((string) ($contact['note'] ?? ''), 1200) ?: null,
             'submission_type'     => 'live',
             'submitted_at'        => $now,
