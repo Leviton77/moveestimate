@@ -162,6 +162,19 @@ export function RepCall({ callId, repEmail, signalingUrl, wpAdminUrl }: RepCallP
     setEnded(true);
   }, []);
 
+  // The client ended the call from their side — tapped "End & send" (which
+  // sends a deliberate "bye", surfacing here as callState "closed") or their
+  // tab/socket just dropped (surfacing as a presence drop). Either way the
+  // rep needs the same "Call ended" screen, not just silence, or they have no
+  // way to reach the WordPress import. endCall() is safe to call more than
+  // once (close()/track-stop/setEnded are all idempotent).
+  const prevClientHere = useRef(false);
+  useEffect(() => {
+    const clientLeft = prevClientHere.current && !clientHere;
+    prevClientHere.current = clientHere;
+    if (clientLeft || state === "closed") endCall();
+  }, [clientHere, state, endCall]);
+
   if (ended) {
     const importUrl = wpAdminUrl
       ? `${wpAdminUrl.replace(/\/+$/, "")}/admin-post.php?action=tme_live_import&call_id=${encodeURIComponent(callId)}`
