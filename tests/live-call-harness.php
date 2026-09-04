@@ -21,6 +21,8 @@ function get_option($name, $default = false) { return $GLOBALS['__options'][$nam
 function update_option($name, $value, $autoload = null) { $GLOBALS['__options'][$name] = $value; return true; }
 function add_action(...$a) {}
 function add_filter(...$a) {}
+function sanitize_key($k) { return strtolower(preg_replace('/[^a-z0-9_\-]/i', '', (string) $k)); }
+function wp_unslash($v) { return $v; }
 function wp_next_scheduled(...$a) { return time() + 3600; }
 function wp_schedule_event(...$a) {}
 function wp_parse_args($args, $defaults = array())
@@ -86,6 +88,30 @@ check(
     call_private('link_message', array('', 'https://x.test/c/1')),
     'tap to start your Tom Moving video walkthrough: https://x.test/c/1'
 );
+check(
+    'link_message: French, with name',
+    call_private('link_message', array('Pat', 'https://x.test/c/1', 'fr')),
+    'Bonjour Pat, touchez pour commencer votre visite vidéo Tom Moving : https://x.test/c/1'
+);
+check(
+    'link_message: French, no name',
+    call_private('link_message', array('', 'https://x.test/c/1', 'fr')),
+    'touchez pour commencer votre visite vidéo Tom Moving : https://x.test/c/1'
+);
+
+// --- email_subject --------------------------------------------------
+
+check('email_subject: English (default)', call_private('email_subject', array()), 'Your Tom Moving video walkthrough');
+check('email_subject: French', call_private('email_subject', array('fr')), 'Votre visite vidéo Tom Moving');
+
+// --- post_locale --------------------------------------------------
+
+$_POST['client_locale'] = 'fr';
+check('post_locale: fr accepted', call_private('post_locale'), 'fr');
+$_POST['client_locale'] = 'de';
+check('post_locale: unknown falls back to en', call_private('post_locale'), 'en');
+unset($_POST['client_locale']);
+check('post_locale: missing falls back to en', call_private('post_locale'), 'en');
 
 // --- clip --------------------------------------------------------
 
