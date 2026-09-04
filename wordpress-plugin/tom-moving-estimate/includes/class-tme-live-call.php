@@ -240,7 +240,9 @@ final class TME_Live_Call
         ?>
         <div class="tme-table-card" style="padding:20px;max-width:720px">
             <h2><?php esc_html_e('Call ready', 'tom-moving-estimate'); ?></h2>
-            <p><a class="button button-primary button-hero" href="<?php echo esc_url($rep_url); ?>" target="_blank" rel="noopener"><?php esc_html_e('Open the call', 'tom-moving-estimate'); ?></a></p>
+            <p><a class="button button-primary button-hero" href="<?php echo esc_url($rep_url); ?>"><?php esc_html_e('Open the call', 'tom-moving-estimate'); ?></a></p>
+            <p class="description"><?php esc_html_e('Opens in this tab. If you’d rather run it in a new tab or window, copy the link below and open it yourself instead of using this button.', 'tom-moving-estimate'); ?></p>
+            <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($rep_url); ?>"></p>
 
             <h3><?php esc_html_e('Send the customer their link', 'tom-moving-estimate'); ?></h3>
             <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($client_url); ?>"></p>
