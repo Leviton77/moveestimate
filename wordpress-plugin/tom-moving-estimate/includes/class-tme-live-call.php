@@ -278,9 +278,12 @@ final class TME_Live_Call
                     </form>
                 <?php endif; ?>
                 <?php if ($phone) : ?>
-                    <a class="button" href="<?php echo esc_attr('sms:' . rawurlencode($phone) . '?&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Text from my phone', 'tom-moving-estimate'); ?></a>
+                    <a class="button" target="_blank" rel="noopener" href="<?php echo esc_attr('sms:' . rawurlencode($phone) . '?&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Text from my phone', 'tom-moving-estimate'); ?></a>
                 <?php endif; ?>
-                <a class="button" href="<?php echo esc_attr('mailto:' . rawurlencode($email) . '?subject=' . rawurlencode(self::email_subject($locale)) . '&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Email from my mail app', 'tom-moving-estimate'); ?></a>
+                <?php // target="_blank": a web mail handler (Gmail, Outlook.com) otherwise
+                      // navigates THIS tab to its compose page, and the rep loses the
+                      // Call ready screen — rep link included — with no way back. ?>
+                <a class="button" target="_blank" rel="noopener" href="<?php echo esc_attr('mailto:' . rawurlencode($email) . '?subject=' . rawurlencode(self::email_subject($locale)) . '&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Email from my mail app', 'tom-moving-estimate'); ?></a>
             </p>
 
             <p class="description"><?php esc_html_e('When the call ends, click “Finish in Tom Estimator” on the call screen. If you close the tab first, it imports automatically within a few minutes.', 'tom-moving-estimate'); ?></p>
