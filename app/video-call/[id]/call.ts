@@ -24,7 +24,12 @@ export type AppMessage =
   | { type: "laser"; from?: CallRole; x: number; y: number; active: boolean }
   | { type: "camera"; from?: CallRole; action: "flip" }
   | { type: "contact-form"; from?: CallRole; action: "open" }
-  | { type: "contact-submitted"; from?: CallRole; [k: string]: unknown };
+  | { type: "contact-submitted"; from?: CallRole; [k: string]: unknown }
+  // The rep asks the client to wrap up the call. Only the client holds the
+  // recording, so ending always runs through the client's finalize/upload;
+  // this is how a rep-initiated end reaches it. Sent over the data channel
+  // (or the WebSocket before it opens), never as a signalling "bye".
+  | { type: "end-call"; from?: CallRole };
 
 interface CallEvents {
   onRemoteStream?: (stream: MediaStream) => void;

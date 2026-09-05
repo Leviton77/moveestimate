@@ -213,9 +213,14 @@ export function VideoCallInterface({
         void switchCamera();
       } else if (msg.type === "contact-form" && msg.action === "open" && msg.from === "rep") {
         setContactOpen(true);
+      } else if (msg.type === "end-call" && msg.from === "rep") {
+        // The rep ended the call. Wrap up exactly as we do on a rep presence
+        // drop: stop the recorder, upload, then send "bye" so the rep's
+        // screen can settle. finalize() guards against running twice.
+        void finalize();
       }
     },
-    [switchCamera],
+    [switchCamera, finalize],
   );
   // startCall captures its callbacks once; route through a ref so incoming
   // messages always hit the current switchCamera (which reads live state).
