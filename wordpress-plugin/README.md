@@ -121,6 +121,32 @@ report view and as the email body.
   `view_lead_report()` also now sends an explicit `Cache-Control: no-store`
   header as a second line of defense against the caching theory.
 
+## 1.2.0-rc12 — the real fix for "link expired" on send-by-email
+
+rc11's graceful-redirect change didn't fix it: staging confirmed the email
+sent successfully every time, but the *redirect back to the report* then
+failed **its own** nonce check (`tme_view_lead_report`) and showed
+WordPress's generic error page anyway — a fresh nonce, minted and consumed
+one HTTP round-trip apart, failing to verify. The exact mechanism wasn't
+pinned down (candidates: a host-level edge cache on this GoDaddy install
+serving that admin-post.php response across sessions, or the auth cookie
+not being read the same way on that request), and chasing it further would
+mean guessing blind against production. Instead the fix removes the
+dependency entirely:
+
+- `view_lead_report()` no longer requires a nonce at all. It's a read-only
+  view gated purely by the `tme_manage_estimates` capability — the same
+  model the plugin already uses for the plain estimate "Review" screen
+  (`detail_page()`), which has never taken a nonce either. It's also the
+  redirect target after sending, so removing the check there removes the
+  entire failure mode.
+- The "Create lead report" button link and the post-send redirects
+  (`email_lead_report()`) no longer build or need a `tme_view_lead_report`
+  nonce.
+- `email_lead_report()` itself still requires and verifies its own nonce
+  (sending mail is the one state-changing step here, so it's the one step
+  that should stay CSRF-protected) — that part of rc11 is unchanged.
+
 ## Checks
 
 - **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained

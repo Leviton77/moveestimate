@@ -237,7 +237,7 @@ final class TME_Admin
             <?php self::render_notice(); ?>
             <div class="tme-admin-heading"><div><h1><?php echo esc_html($session->client_name); ?></h1><p><?php echo esc_html($session->current_address); ?> → <?php echo esc_html($session->destination_address); ?></p></div><span class="tme-status tme-status--<?php echo esc_attr($session->status); ?>"><?php echo esc_html(ucfirst($session->status)); ?></span></div>
 
-            <p class="tme-submission-summary"><strong><?php esc_html_e('Submission:', 'tom-moving-estimate'); ?></strong> <span class="tme-method-badge"><?php echo esc_html(self::submission_label($session)); ?></span> <a class="button" target="_blank" rel="noopener" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $session->id), 'tme_view_lead_report_' . $session->id)); ?>"><?php esc_html_e('Create lead report', 'tom-moving-estimate'); ?></a></p>
+            <p class="tme-submission-summary"><strong><?php esc_html_e('Submission:', 'tom-moving-estimate'); ?></strong> <span class="tme-method-badge"><?php echo esc_html(self::submission_label($session)); ?></span> <a class="button" target="_blank" rel="noopener" href="<?php echo esc_url(admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $session->id)); ?>"><?php esc_html_e('Create lead report', 'tom-moving-estimate'); ?></a></p>
 
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-tme-review-form>
                 <input type="hidden" name="action" value="tme_save_session">
@@ -605,9 +605,14 @@ final class TME_Admin
 
     public static function view_lead_report(): void
     {
+        // Capability-gated only, no nonce -- this is a read-only view (same
+        // model as the plain estimate "Review" link), and it's also the
+        // redirect target after sending the report by email. Requiring a
+        // fresh nonce on that return trip was unreliable in practice: the
+        // email itself sent fine, but WordPress's own nonce check on this
+        // page then failed and showed its generic "link expired" screen.
         self::require_capability();
         $id = absint($_GET['session_id'] ?? 0);
-        check_admin_referer('tme_view_lead_report_' . $id);
         $session = TME_DB::get($id);
         if (!$session) {
             wp_die(esc_html__('Estimate not found.', 'tom-moving-estimate'), '', array('response' => 404));
@@ -690,7 +695,9 @@ final class TME_Admin
         self::require_capability();
         $id = absint($_POST['session_id'] ?? 0);
         $raw_to = (string) wp_unslash($_POST['to'] ?? '');
-        $view_url = wp_nonce_url(admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $id), 'tme_view_lead_report_' . $id);
+        // No nonce on the view side (see view_lead_report()), so this
+        // redirect target can't fail its own security-token check.
+        $view_url = admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $id);
 
         // A manual check instead of check_admin_referer() so a stale/mismatched
         // nonce (the report page sat open a while, or was served from a cache
