@@ -21,6 +21,8 @@ function get_option($name, $default = false) { return $GLOBALS['__options'][$nam
 function update_option($name, $value, $autoload = null) { $GLOBALS['__options'][$name] = $value; return true; }
 function add_action(...$a) {}
 function add_filter(...$a) {}
+function sanitize_key($k) { return strtolower(preg_replace('/[^a-z0-9_\-]/i', '', (string) $k)); }
+function wp_unslash($v) { return $v; }
 function wp_next_scheduled(...$a) { return time() + 3600; }
 function wp_schedule_event(...$a) {}
 function wp_parse_args($args, $defaults = array())
@@ -28,6 +30,12 @@ function wp_parse_args($args, $defaults = array())
     $args = is_array($args) ? $args : array();
     return array_merge($defaults, $args);
 }
+// Real wp_date() formats in the site's local timezone; this harness has no
+// site timezone to convert to, so it stands in for "format this absolute
+// timestamp" -- the behavior under test is that callers pass a real
+// timestamp (derived by treating a stored value as UTC) rather than
+// printing a stored UTC string as if it were already local.
+function wp_date($format, $timestamp = null) { return gmdate($format, $timestamp ?? time()); }
 
 // WordPress ships mbstring or a polyfill; the bundled test PHP may lack it.
 if (!function_exists('mb_substr')) {
@@ -86,6 +94,30 @@ check(
     call_private('link_message', array('', 'https://x.test/c/1')),
     'tap to start your Tom Moving video walkthrough: https://x.test/c/1'
 );
+check(
+    'link_message: French, with name',
+    call_private('link_message', array('Pat', 'https://x.test/c/1', 'fr')),
+    'Bonjour Pat, touchez pour commencer votre visite vidéo Tom Moving : https://x.test/c/1'
+);
+check(
+    'link_message: French, no name',
+    call_private('link_message', array('', 'https://x.test/c/1', 'fr')),
+    'touchez pour commencer votre visite vidéo Tom Moving : https://x.test/c/1'
+);
+
+// --- email_subject --------------------------------------------------
+
+check('email_subject: English (default)', call_private('email_subject', array()), 'Your Tom Moving video walkthrough');
+check('email_subject: French', call_private('email_subject', array('fr')), 'Votre visite vidéo Tom Moving');
+
+// --- post_locale --------------------------------------------------
+
+$_POST['client_locale'] = 'fr';
+check('post_locale: fr accepted', call_private('post_locale'), 'fr');
+$_POST['client_locale'] = 'de';
+check('post_locale: unknown falls back to en', call_private('post_locale'), 'en');
+unset($_POST['client_locale']);
+check('post_locale: missing falls back to en', call_private('post_locale'), 'en');
 
 // --- clip --------------------------------------------------------
 
@@ -98,6 +130,28 @@ check('clip: under limit', call_private('clip', array(' hi ', 40)), 'hi');
 check('to_mysql: ISO', call_private('to_mysql', array('2026-09-03T19:22:00Z')), '2026-09-03 19:22:00');
 check('to_mysql: empty', call_private('to_mysql', array('')), '');
 check('to_mysql: junk', call_private('to_mysql', array('not a date')), '');
+
+// --- imported_note --------------------------------------------------
+// Regression: the rep note used to print the stored UTC datetime as if it
+// were already local time (off by the site's UTC offset, e.g. 4 hours for
+// Eastern Daylight Time). It must format the UTC value as an absolute
+// timestamp instead of treating the string as local.
+
+check(
+    'imported_note: with rep name',
+    call_private('imported_note', array('2026-09-04 18:00:00', 'Jordan Rep')),
+    'Imported from a live walkthrough on ' . gmdate('F j, Y, g:i a', strtotime('2026-09-04 18:00:00 UTC')) . ' with Jordan Rep.'
+);
+check(
+    'imported_note: blank rep falls back to "a representative"',
+    call_private('imported_note', array('2026-09-04 18:00:00', '')),
+    'Imported from a live walkthrough on ' . gmdate('F j, Y, g:i a', strtotime('2026-09-04 18:00:00 UTC')) . ' with a representative.'
+);
+check(
+    'imported_note: does not print the raw UTC string verbatim',
+    !str_contains(call_private('imported_note', array('2026-09-04 18:00:00', 'Jordan')), '2026-09-04 18:00:00'),
+    true
+);
 
 // --- settings / is_configured -------------------------------------
 

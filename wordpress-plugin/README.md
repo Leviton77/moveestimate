@@ -74,15 +74,141 @@ uploaded, and imported into a new "Live walkthrough" estimate):
     `E_WARNING` (undefined `size` key) in the `draw` branch, found by the new
     test's regression case.
 
+## 1.2.0-rc4 — rc9
+
+Delivered independently to the user across several install/test cycles on
+staging (tab-closing UX, richer contact form, English/French calls, editable
+Client details). Not written up here in detail; see the `readme.txt`
+changelog entries for rc4 through rc9.
+
+## 1.2.0-rc10 — lead report
+
+**New file** — `includes/class-tme-lead-report.php` (tracked here in full):
+builds a full plain-text "lead report" for one estimate — client details,
+submission/status, live-call info, rep notes, and (when one has been saved) a
+readable summary of the AI moving report (summary stats, inventory by room,
+disassembly, mattress bags, open questions). Used both for the on-screen
+report view and as the email body.
+
+**Edited files:**
+
+| File | Change |
+|------|--------|
+| `tom-moving-estimate.php` | version `1.2.0-rc9` → `1.2.0-rc10`; `require_once` for the new class |
+| `includes/class-tme-admin.php` | `submission_label()` made `public` (reused by the new class); new admin-post actions `tme_view_lead_report` (renders the report + a "Send by email" form, prepopulated with every `tme_manage_estimates` user's email) and `tme_email_lead_report` (validates recipients, `wp_mail()`s the report text); "Create lead report" button added next to the submission badge on the review screen |
+| `readme.txt` | stable tag + changelog entry |
+
+## 1.2.0-rc11 — two bugs found while testing rc10 on staging
+
+- The rep note auto-added when a live walkthrough is imported ("Imported
+  from a live walkthrough on...") printed the stored UTC timestamp as if it
+  were already local time — 4 hours off on this site's timezone. Extracted
+  into `TME_Live_Call::imported_note()`, which now converts through
+  `wp_date()` before formatting. Covered by 3 new checks in
+  `tests/live-call-harness.php`.
+- Clicking "Send by email" on the lead report could land on WordPress's
+  generic "The link you followed has expired" page, losing whatever the rep
+  had typed into the recipient field. Root cause not fully confirmed — the
+  page's own nonce check (opening "Create lead report") worked fine, so the
+  most likely explanation is the report page (a standalone admin-post.php
+  response with a form embedded, the first of its kind in this plugin)
+  sitting open, or the host's edge cache serving it to a different session
+  than it was generated for; either way the nonce embedded in the form no
+  longer matched at submit time. `email_lead_report()` now verifies the
+  nonce manually instead of via `check_admin_referer()`: on a mismatch it
+  redirects back to a fresh copy of the report (new nonce) with the typed
+  recipient list preserved and a plain-language banner, instead of dying.
+  `view_lead_report()` also now sends an explicit `Cache-Control: no-store`
+  header as a second line of defense against the caching theory.
+
+## 1.2.0-rc12 — the real fix for "link expired" on send-by-email
+
+rc11's graceful-redirect change didn't fix it: staging confirmed the email
+sent successfully every time, but the *redirect back to the report* then
+failed **its own** nonce check (`tme_view_lead_report`) and showed
+WordPress's generic error page anyway — a fresh nonce, minted and consumed
+one HTTP round-trip apart, failing to verify. The exact mechanism wasn't
+pinned down (candidates: a host-level edge cache on this GoDaddy install
+serving that admin-post.php response across sessions, or the auth cookie
+not being read the same way on that request), and chasing it further would
+mean guessing blind against production. Instead the fix removes the
+dependency entirely:
+
+- `view_lead_report()` no longer requires a nonce at all. It's a read-only
+  view gated purely by the `tme_manage_estimates` capability — the same
+  model the plugin already uses for the plain estimate "Review" screen
+  (`detail_page()`), which has never taken a nonce either. It's also the
+  redirect target after sending, so removing the check there removes the
+  entire failure mode.
+- The "Create lead report" button link and the post-send redirects
+  (`email_lead_report()`) no longer build or need a `tme_view_lead_report`
+  nonce.
+- `email_lead_report()` itself still requires and verifies its own nonce
+  (sending mail is the one state-changing step here, so it's the one step
+  that should stay CSRF-protected) — that part of rc11 is unchanged.
+
+## 1.2.0-rc13 — delete a lead, one at a time or in bulk
+
+**New:** `TME_DB::delete()` (now tracked here too, since this is the first
+change to touch it) — a plain row delete, `!== false`-checked like the
+existing `update()`.
+
+**`includes/class-tme-admin.php`:**
+
+- New admin-post actions `tme_delete_estimate` (single) and
+  `tme_bulk_delete_estimates` (many). Both call
+  `TME_Retention::delete_media($id, true)` first (best-effort R2 cleanup —
+  the existing helper already handles photos vs. video vs. nothing to do)
+  and then `TME_DB::delete($id)`. Bulk failures aren't itemized, just
+  counted ("3 estimates deleted."); the single-delete path does surface a
+  storage error if the R2 cleanup failed but still deletes the record.
+- `detail_page()`: a "Delete this estimate" card at the bottom of the
+  sidebar, styled and confirm-dialog-wired the same way as the existing
+  "Delete now" / "Delete all photos" links (`button-link-delete` +
+  `data-tme-delete`, already bound by `assets/js/admin.js` on this page —
+  no JS changes needed).
+- `list_page()`: the table is now wrapped in its own POST form with a
+  per-row checkbox, a header "select all" checkbox, and a "Delete
+  selected" button. A small inline `<script>` (not worth a separate
+  enqueued file) wires select-all and a confirm dialog that also blocks
+  submitting with nothing checked.
+- New `TME_Admin::parse_ids()` — sanitizes the posted `session_ids[]`
+  checkbox values the same way `parse_emails()` sanitizes the recipient
+  field (coerce, drop invalid/zero, dedupe).
+- `assets/css/admin.css`: `.tme-check-col` (narrow checkbox column) and
+  `.tme-bulk-actions .button-link-delete` (red, matching the existing
+  `.tme-side-actions` treatment).
+
+The single-delete and bulk-delete request handlers aren't unit tested —
+same reasoning as `save_session()`/`delete_video()` etc. elsewhere in this
+plugin: they're thin glue over `TME_DB`/`TME_Retention`/R2, not pure
+helpers. `parse_ids()` is a pure helper and does have 3 new checks in
+`tests/lead-report-harness.php`.
+
 ## Checks
 
-- `php -l` clean on all files.
-- `php tests/live-call-harness.php` (from the repo root) — helper-logic checks
-  (phone → E.164, link message, settings, cron schedule). Needs `mbstring` or
-  the polyfill the harness declares.
-- `php tests/annotations-harness.php` — `sanitize_annotations()` checks:
-  laser round-trips, coordinates clamp 0-100, note/draw regressions, unknown
-  types still rejected.
+- **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained
+  3 checks for `imported_note()` (correct local-time conversion, rep-name
+  fallback, and a regression guard that the raw UTC string is never printed
+  verbatim). The nonce-graceful-failure change in `email_lead_report()` has
+  no dedicated harness test — it isn't a small pure helper like the rest of
+  what these harnesses cover, so it needs a real staging retest instead:
+  open "Create lead report", leave the tab for a bit (or just try sending
+  right away), confirm the send works, and if "expired" ever shows again,
+  confirm it now lands back on the report with the recipient field intact
+  rather than a dead-end page.
+- **rc10:** `php -l` clean on every file in the plugin. New
+  `tests/lead-report-harness.php` (27 checks) covers `TME_Lead_Report::build_text()`
+  — core fields, optional sections only appearing when populated, live-call
+  vs. photos vs. video submissions, the AI-report summary/rooms/disassembly/
+  mattress-bags/open-questions text, and `TME_Admin::parse_emails()`
+  (comma/semicolon splitting, trimming, deduping, dropping invalid
+  addresses). `tests/live-call-harness.php` and `tests/annotations-harness.php`
+  still pass unchanged.
+- **rc1-rc9:** `php -l` clean on all files; `php tests/live-call-harness.php`
+  and `php tests/annotations-harness.php` (from the repo root) passed —
+  helper-logic checks (phone → E.164, link message, settings, cron schedule,
+  annotation sanitizing).
 - API contract matches the Sites `/api/calls*` smoke in `feat/wp-live-call-api`.
-- **Not yet run on a real WordPress** — verify on GoDaddy staging: DB upgrade,
-  the admin screens, a real call → import → row + R2 object + retention.
+- Verified end-to-end on GoDaddy staging through rc9 (DB upgrade, admin
+  screens, a real call → import → row + R2 object + retention).

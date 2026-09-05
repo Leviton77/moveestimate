@@ -223,6 +223,12 @@ final class TME_Live_Call
                     <input type="text" name="client_phone" class="regular-text" maxlength="40"></label></p>
                 <p><label><?php esc_html_e('Customer email (optional)', 'tom-moving-estimate'); ?><br>
                     <input type="email" name="client_email" class="regular-text" maxlength="190"></label></p>
+                <p><label><?php esc_html_e('Customer’s language', 'tom-moving-estimate'); ?><br>
+                    <select name="client_locale">
+                        <option value="en"><?php esc_html_e('English', 'tom-moving-estimate'); ?></option>
+                        <option value="fr"><?php esc_html_e('French', 'tom-moving-estimate'); ?></option>
+                    </select></label>
+                    <span class="description"><?php esc_html_e('The customer’s whole call screen, contact form and confirmation messages show in this language. This does not change anything on your (the rep’s) screen.', 'tom-moving-estimate'); ?></span></p>
                 <p><button class="button button-primary" type="submit"><?php esc_html_e('Start live walkthrough', 'tom-moving-estimate'); ?></button></p>
             </form>
         </div>
@@ -236,11 +242,19 @@ final class TME_Live_Call
         $name       = (string) ($call['client_name'] ?? '');
         $phone      = (string) ($call['client_phone'] ?? '');
         $email      = (string) ($call['client_email'] ?? '');
-        $sms_body   = self::link_message($name, $client_url);
+        $locale     = (string) ($call['client_locale'] ?? 'en') === 'fr' ? 'fr' : 'en';
+        $sms_body   = self::link_message($name, $client_url, $locale);
         ?>
         <div class="tme-table-card" style="padding:20px;max-width:720px">
             <h2><?php esc_html_e('Call ready', 'tom-moving-estimate'); ?></h2>
-            <p><a class="button button-primary button-hero" href="<?php echo esc_url($rep_url); ?>" target="_blank" rel="noopener"><?php esc_html_e('Open the call', 'tom-moving-estimate'); ?></a></p>
+            <p class="description"><?php echo esc_html(sprintf(
+                /* translators: %s: English or French */
+                __('Customer’s language for this call: %s', 'tom-moving-estimate'),
+                $locale === 'fr' ? __('French', 'tom-moving-estimate') : __('English', 'tom-moving-estimate')
+            )); ?></p>
+            <p class="description"><strong><?php esc_html_e('Recommended: copy this link and paste it into a new browser tab yourself (Ctrl/Cmd+T, paste, Enter).', 'tom-moving-estimate'); ?></strong> <?php esc_html_e('On some browsers, clicking a link straight into the call can cause the tab to close itself the moment the call ends, with no way back to Finish in Tom Estimator. Pasting the link into a tab you opened yourself has not shown that problem.', 'tom-moving-estimate'); ?></p>
+            <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($rep_url); ?>"></p>
+            <p class="description"><?php esc_html_e('Or, if you\'d rather just click through:', 'tom-moving-estimate'); ?> <a class="button button-primary" href="<?php echo esc_url($rep_url); ?>"><?php esc_html_e('Open the call', 'tom-moving-estimate'); ?></a></p>
 
             <h3><?php esc_html_e('Send the customer their link', 'tom-moving-estimate'); ?></h3>
             <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($client_url); ?>"></p>
@@ -266,7 +280,7 @@ final class TME_Live_Call
                 <?php if ($phone) : ?>
                     <a class="button" href="<?php echo esc_attr('sms:' . rawurlencode($phone) . '?&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Text from my phone', 'tom-moving-estimate'); ?></a>
                 <?php endif; ?>
-                <a class="button" href="<?php echo esc_attr('mailto:' . rawurlencode($email) . '?subject=' . rawurlencode(__('Your Tom Moving video walkthrough', 'tom-moving-estimate')) . '&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Email from my mail app', 'tom-moving-estimate'); ?></a>
+                <a class="button" href="<?php echo esc_attr('mailto:' . rawurlencode($email) . '?subject=' . rawurlencode(self::email_subject($locale)) . '&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Email from my mail app', 'tom-moving-estimate'); ?></a>
             </p>
 
             <p class="description"><?php esc_html_e('When the call ends, click “Finish in Tom Estimator” on the call screen. If you close the tab first, it imports automatically within a few minutes.', 'tom-moving-estimate'); ?></p>
@@ -314,11 +328,12 @@ final class TME_Live_Call
 
         $user = wp_get_current_user();
         $result = self::api('POST', '/api/calls', array(
-            'rep_email'    => $user->user_email,
-            'rep_name'     => $user->display_name,
-            'client_name'  => self::post_text('client_name', 120),
-            'client_phone' => self::post_text('client_phone', 40),
-            'client_email' => self::post_text('client_email', 190),
+            'rep_email'     => $user->user_email,
+            'rep_name'      => $user->display_name,
+            'client_name'   => self::post_text('client_name', 120),
+            'client_phone'  => self::post_text('client_phone', 40),
+            'client_email'  => self::post_text('client_email', 190),
+            'client_locale' => self::post_locale(),
         ));
         if (is_wp_error($result)) {
             wp_safe_redirect(self::notice_url($result->get_error_message(), 'error'));
@@ -332,13 +347,14 @@ final class TME_Live_Call
         }
 
         set_transient('tme_live_' . $call_id, array(
-            'rep_url'      => (string) ($result['rep_url'] ?? ''),
-            'client_url'   => (string) ($result['client_url'] ?? ''),
-            'client_name'  => self::post_text('client_name', 120),
-            'client_phone' => self::post_text('client_phone', 40),
-            'client_email' => self::post_text('client_email', 190),
-            'created_by'   => get_current_user_id(),
-            'created_at'   => time(),
+            'rep_url'       => (string) ($result['rep_url'] ?? ''),
+            'client_url'    => (string) ($result['client_url'] ?? ''),
+            'client_name'   => self::post_text('client_name', 120),
+            'client_phone'  => self::post_text('client_phone', 40),
+            'client_email'  => self::post_text('client_email', 190),
+            'client_locale' => self::post_locale(),
+            'created_by'    => get_current_user_id(),
+            'created_at'    => time(),
         ), self::START_TTL);
 
         wp_safe_redirect(self::page_url(array('call' => $call_id)));
@@ -357,11 +373,12 @@ final class TME_Live_Call
             exit;
         }
         $method = sanitize_key(wp_unslash($_POST['method'] ?? ''));
-        $body   = self::link_message((string) $call['client_name'], (string) $call['client_url']);
+        $locale = (string) ($call['client_locale'] ?? 'en') === 'fr' ? 'fr' : 'en';
+        $body   = self::link_message((string) $call['client_name'], (string) $call['client_url'], $locale);
 
         if ($method === 'email') {
             $to = sanitize_email((string) $call['client_email']);
-            $ok = $to && wp_mail($to, __('Your Tom Moving video walkthrough', 'tom-moving-estimate'), $body);
+            $ok = $to && wp_mail($to, self::email_subject($locale), $body);
             $msg = $ok ? __('Email sent.', 'tom-moving-estimate') : __('Could not send the email.', 'tom-moving-estimate');
             wp_safe_redirect(self::notice_url($msg, $ok ? 'success' : 'error', array('call' => $call_id)));
             exit;
@@ -396,7 +413,15 @@ final class TME_Live_Call
 
         $result = self::import_one($call_id);
         if (is_wp_error($result)) {
-            wp_safe_redirect(self::notice_url($result->get_error_message(), 'error'));
+            // Keep ?call= on the bounce-back so the page shows the call's
+            // links/status again instead of falling through to a blank
+            // "start a new call" form -- landing there read as an empty
+            // page with nothing explaining what happened.
+            wp_safe_redirect(self::notice_url(
+                $result->get_error_message(),
+                'error',
+                array('call' => $call_id)
+            ));
             exit;
         }
         wp_safe_redirect(add_query_arg(array(
@@ -475,7 +500,7 @@ final class TME_Live_Call
         $status = (string) ($call['status'] ?? '');
         $recording = isset($call['recording']) && is_array($call['recording']) ? $call['recording'] : null;
         if (!in_array($status, array('uploaded', 'completed'), true) || !$recording) {
-            return $done(new WP_Error('tme_live_not_ready', __('The recording is not ready yet. Try again in a moment.', 'tom-moving-estimate')));
+            return $done(new WP_Error('tme_live_not_ready', __('The recording isn\'t uploaded yet. If the call just ended, wait a minute and try Finish again — it will also be picked up automatically within a few minutes. If the customer closed their browser instead of ending the call normally, the recording never uploaded and can\'t be recovered.', 'tom-moving-estimate')));
         }
 
         if (!TME_Plugin::is_configured()) {
@@ -514,14 +539,23 @@ final class TME_Live_Call
         $settings = TME_Plugin::settings();
         $expires = gmdate('Y-m-d H:i:s', $uploaded_ts + ((int) $settings['retention_days'] * DAY_IN_SECONDS));
 
+        // The DB column is a NOT NULL date; the client's form is optional, so
+        // fall back to today when they didn't give one (or gave something
+        // malformed -- the Sites API already validates the format, but don't
+        // trust it blindly here either).
+        $move_date = (string) ($contact['move_date'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $move_date)) {
+            $move_date = gmdate('Y-m-d');
+        }
+
         $row = TME_DB::create(array(
             'client_name'         => self::clip((string) ($contact['name'] ?? ''), 120) ?: __('Live walkthrough', 'tom-moving-estimate'),
             'email'               => self::clip(sanitize_email((string) ($contact['email'] ?? '')), 190),
             'phone'               => self::clip((string) ($contact['phone'] ?? ''), 40),
-            'move_date'           => gmdate('Y-m-d'),
-            'current_address'     => '',
-            'destination_address' => '',
-            'estimated_size'      => '',
+            'move_date'           => $move_date,
+            'current_address'     => self::clip((string) ($contact['current_address'] ?? ''), 255),
+            'destination_address' => self::clip((string) ($contact['destination_address'] ?? ''), 255),
+            'estimated_size'      => self::clip((string) ($contact['home_size'] ?? ''), 32),
             'special_items'       => self::clip((string) ($contact['note'] ?? ''), 1200) ?: null,
             'submission_type'     => 'live',
             'submitted_at'        => $now,
@@ -541,12 +575,7 @@ final class TME_Live_Call
             'live_call_id'       => $call_id,
             'live_rep'           => self::clip($rep, 190),
             'live_started_at'    => $started ?: $now,
-            'rep_notes'          => sprintf(
-                /* translators: 1: date, 2: rep name */
-                __("Imported from a live walkthrough on %1\$s with %2\$s.", 'tom-moving-estimate'),
-                $started ?: $now,
-                $rep ?: __('a representative', 'tom-moving-estimate')
-            ),
+            'rep_notes'          => self::imported_note($started ?: $now, $rep),
         ));
 
         TME_Retention::schedule_for_session($id, $uploaded_ts);
@@ -736,23 +765,57 @@ final class TME_Live_Call
         return self::clip(sanitize_text_field(wp_unslash($_POST[$field] ?? '')), $max);
     }
 
+    private static function post_locale(): string
+    {
+        $value = sanitize_key(wp_unslash($_POST['client_locale'] ?? 'en'));
+        return $value === 'fr' ? 'fr' : 'en';
+    }
+
     private static function clip(string $value, int $max): string
     {
         return trim(mb_substr($value, 0, $max));
     }
 
-    private static function link_message(string $name, string $url): string
+    /**
+     * The SMS/email body inviting the customer to the call, in their chosen
+     * language. Not run through WordPress __() -- this plugin has no French
+     * translation file, and this is customer-facing copy the rep didn't
+     * write, not the plugin's own admin UI.
+     */
+    private static function link_message(string $name, string $url, string $locale = 'en'): string
     {
-        $greeting = $name !== '' ? sprintf(__('Hi %s, ', 'tom-moving-estimate'), $name) : '';
-        return $greeting . sprintf(
-            __('tap to start your Tom Moving video walkthrough: %s', 'tom-moving-estimate'),
-            $url
-        );
+        if ($locale === 'fr') {
+            $greeting = $name !== '' ? "Bonjour {$name}, " : '';
+            return $greeting . "touchez pour commencer votre visite vidéo Tom Moving : {$url}";
+        }
+        $greeting = $name !== '' ? "Hi {$name}, " : '';
+        return $greeting . "tap to start your Tom Moving video walkthrough: {$url}";
+    }
+
+    private static function email_subject(string $locale = 'en'): string
+    {
+        return $locale === 'fr' ? 'Votre visite vidéo Tom Moving' : 'Your Tom Moving video walkthrough';
     }
 
     private static function to_mysql(string $value): string
     {
         $ts = strtotime($value);
         return $ts ? gmdate('Y-m-d H:i:s', $ts) : '';
+    }
+
+    /**
+     * $utc_datetime is a MySQL datetime string in UTC (as stored on the
+     * session row) -- format it in the site's local timezone for the rep
+     * note, rather than printing the raw UTC value as if it were local time.
+     */
+    private static function imported_note(string $utc_datetime, string $rep): string
+    {
+        $ts = strtotime($utc_datetime . ' UTC');
+        return sprintf(
+            /* translators: 1: date and time, 2: rep name */
+            __('Imported from a live walkthrough on %1$s with %2$s.', 'tom-moving-estimate'),
+            $ts ? wp_date('F j, Y, g:i a', $ts) : $utc_datetime,
+            $rep !== '' ? $rep : __('a representative', 'tom-moving-estimate')
+        );
     }
 }
