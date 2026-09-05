@@ -155,12 +155,35 @@ export function RepCall({ callId, repEmail, signalingUrl, wpAdminUrl }: RepCallP
     setContactAsked(true);
   }, []);
 
+  // Either side can end the call, but the client is the only party that holds
+  // the recording, so ending always has to run through the client's
+  // finalize-and-upload. When the rep ends, ask the client to wrap up (an
+  // "end-call" app message) and leave the transport open in the background so
+  // that message is delivered and the client's post-upload "bye" comes back.
+  // Deliberately no callRef.current.close() here: that sends our own "bye",
+  // which on the client tears down the peer connection and stops the very
+  // camera/mic tracks its recorder still needs. The transport is closed by
+  // the effect below once the client is done, or on unmount.
   const endCall = useCallback(() => {
-    callRef.current?.close();
+    callRef.current?.send({ type: "end-call" });
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
     setEnded(true);
   }, []);
+
+  // Close the still-open background transport once the call has ended here and
+  // the client has either confirmed the upload (its "bye" surfaces as state
+  // "closed") or dropped off. If neither happens, the init effect's cleanup
+  // closes it on unmount — e.g. when the rep follows the "Finish in Tom
+  // Estimator" link.
+  useEffect(() => {
+    if (ended && (state === "closed" || !clientHere)) {
+      callRef.current?.close();
+      callRef.current = null;
+    }
+  }, [ended, state, clientHere]);
 
   // The client ended the call from their side — tapped "End & send" (which
   // sends a deliberate "bye", surfacing here as callState "closed") or their
