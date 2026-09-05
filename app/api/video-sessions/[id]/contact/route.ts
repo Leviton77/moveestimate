@@ -14,11 +14,18 @@ function isVideoSessionId(value: unknown): value is string {
 function readContact(payload: Record<string, unknown>): VideoSessionContact {
   const str = (v: unknown, max: number) =>
     typeof v === "string" ? v.trim().slice(0, max) : "";
+  const moveDate = str(payload.moveDate, 10);
   return {
     name: str(payload.name, 200),
     phone: str(payload.phone, 60),
     email: str(payload.email, 200),
     note: str(payload.note, 2000),
+    // Loosely validated: an <input type="date"> always yields YYYY-MM-DD:
+    // drop anything else rather than reject the whole (optional) form over it.
+    moveDate: /^\d{4}-\d{2}-\d{2}$/.test(moveDate) ? moveDate : "",
+    homeSize: str(payload.homeSize, 40),
+    currentAddress: str(payload.currentAddress, 240),
+    destinationAddress: str(payload.destinationAddress, 240),
   };
 }
 
@@ -40,11 +47,8 @@ export async function POST(
 
   const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const contact = readContact(payload);
-  if (!contact.name && !contact.phone && !contact.email) {
-    return Response.json(
-      { error: "Add at least a name, phone, or email." },
-      { status: 400 },
-    );
+  if (!contact.name) {
+    return Response.json({ error: "Please add your name." }, { status: 400 });
   }
   await setVideoSessionContact(id, contact, "client-form");
   return Response.json({ ok: true });

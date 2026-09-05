@@ -274,12 +274,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy); box-shado
 .video-call-container .contact-sheet h2 { margin: 0; font-size: 1.1rem; }
 .video-call-container .contact-sheet p { margin: 0 0 0.2rem; font-size: 0.85rem; color: #aab0ba; }
 .video-call-container .contact-sheet input,
+.video-call-container .contact-sheet select,
 .video-call-container .contact-sheet textarea {
   width: 100%; padding: 0.6rem 0.7rem; border-radius: 0.4rem;
   border: 1px solid rgba(255, 255, 255, 0.18); background: #1b2026; color: #fff;
   font: inherit;
 }
 .video-call-container .contact-sheet textarea { resize: vertical; }
+.video-call-container .contact-sheet label { display: flex; flex-direction: column; gap: 0.3rem; }
+.video-call-container .contact-sheet label span { font-size: 0.78rem; color: #aab0ba; }
 .video-call-container .contact-sheet__err { color: #ff8a80; font-size: 0.85rem; }
 .video-call-container .contact-sheet__row { display: flex; gap: 0.6rem; margin-top: 0.2rem; }
 .video-call-container .contact-sheet__row .button { flex: 1; }

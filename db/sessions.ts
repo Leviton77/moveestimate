@@ -86,6 +86,10 @@ export async function ensureDatabase() {
     "contact_phone TEXT",
     "contact_email TEXT",
     "contact_note TEXT",
+    "contact_move_date TEXT",
+    "contact_home_size TEXT",
+    "contact_current_address TEXT",
+    "contact_destination_address TEXT",
     "contact_source TEXT",
     // WordPress ("Tom Moving Estimate") integration: rows created by the plugin
     // are marked origin='wp' and tracked until the plugin has pulled them.
@@ -93,6 +97,7 @@ export async function ensureDatabase() {
     "rep_name TEXT",
     "wp_request_id TEXT",
     "wp_ingested INTEGER NOT NULL DEFAULT 0",
+    "client_locale TEXT",
   ]) {
     try {
       await db.prepare(`ALTER TABLE video_sessions ADD COLUMN ${column}`).run();
@@ -204,9 +209,15 @@ export type VideoSessionRecord = {
   contact_phone: string | null;
   contact_email: string | null;
   contact_note: string | null;
+  contact_move_date: string | null;
+  contact_home_size: string | null;
+  contact_current_address: string | null;
+  contact_destination_address: string | null;
   contact_source: ContactSource | null;
   origin: "wp" | "sites" | null;
   rep_name: string | null;
+  /** Language the client sees on the call page and contact form. */
+  client_locale: "en" | "fr" | null;
   wp_request_id: string | null;
   /** 0 or 1 — whether the WordPress plugin has pulled this completed call. */
   wp_ingested: number;
@@ -219,6 +230,10 @@ export type VideoSessionContact = {
   phone: string;
   email: string;
   note: string;
+  moveDate: string;
+  homeSize: string;
+  currentAddress: string;
+  destinationAddress: string;
 };
 
 export async function createVideoSession(repEmail: string, estimateSessionId?: string) {
@@ -264,14 +279,20 @@ export async function setVideoSessionContact(
   await ensureDatabase();
   await database()
     .prepare(`UPDATE video_sessions
-      SET contact_name = ?, contact_phone = ?, contact_email = ?,
-          contact_note = ?, contact_source = ?, updated_at = CURRENT_TIMESTAMP
+      SET contact_name = ?, contact_phone = ?, contact_email = ?, contact_note = ?,
+          contact_move_date = ?, contact_home_size = ?,
+          contact_current_address = ?, contact_destination_address = ?,
+          contact_source = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`)
     .bind(
       contact.name || null,
       contact.phone || null,
       contact.email || null,
       contact.note || null,
+      contact.moveDate || null,
+      contact.homeSize || null,
+      contact.currentAddress || null,
+      contact.destinationAddress || null,
       source,
       id,
     )
@@ -307,6 +328,7 @@ export async function attachVideoToSession(
 export async function createWpCall(input: {
   repEmail: string;
   repName: string;
+  clientLocale?: "en" | "fr";
   contact?: { name?: string; phone?: string; email?: string };
 }) {
   await ensureDatabase();
@@ -317,13 +339,14 @@ export async function createWpCall(input: {
   const source = name || phone || email ? "rep-entered" : null;
   await database()
     .prepare(`INSERT INTO video_sessions
-      (id, rep_email, rep_name, origin, status,
+      (id, rep_email, rep_name, client_locale, origin, status,
        contact_name, contact_phone, contact_email, contact_source)
-      VALUES (?, ?, ?, 'wp', 'waiting', ?, ?, ?, ?)`)
+      VALUES (?, ?, ?, ?, 'wp', 'waiting', ?, ?, ?, ?)`)
     .bind(
       id,
       input.repEmail || "rep@tommoving.ca",
       input.repName || "",
+      input.clientLocale === "fr" ? "fr" : "en",
       name,
       phone,
       email,

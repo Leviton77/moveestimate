@@ -3,15 +3,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startCall, type AppMessage, type CallHandle, type CallState } from "./call";
 import { drawLaser, LASER_COLOR, pointerToFrame, type LaserPoint } from "./laser";
+import { HOME_SIZES, MESSAGES, type Locale } from "./messages";
 
 interface VideoCallInterfaceProps {
   videoSessionId: string;
   repEmail: string;
   /** wss:// origin of the signaling Worker. Empty = record solo, no live call. */
   signalingUrl: string;
+  /** Language the client sees, chosen by the rep when starting the call. */
+  locale: Locale;
 }
 
 type Stage = "init" | "live" | "ending" | "done" | "error";
+
+type ContactFields = {
+  name: string;
+  phone: string;
+  email: string;
+  note: string;
+  moveDate: string;
+  homeSize: string;
+  currentAddress: string;
+  destinationAddress: string;
+};
 
 /**
  * Pick a container/codec the current browser can actually record. Safari and
@@ -40,7 +54,9 @@ export function VideoCallInterface({
   videoSessionId,
   repEmail,
   signalingUrl,
+  locale,
 }: VideoCallInterfaceProps) {
+  const messages = MESSAGES[locale];
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -141,7 +157,7 @@ export function VideoCallInterface({
         audioCtxRef.current = null;
 
         if (chunksRef.current.length === 0) {
-          throw new Error("Nothing was recorded.");
+          throw new Error(messages.nothingRecordedError);
         }
         const type = mimeTypeRef.current || "video/webm";
         const blob = new Blob(chunksRef.current, { type });
@@ -152,7 +168,7 @@ export function VideoCallInterface({
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error || "Upload failed.");
+          throw new Error(body.error || messages.uploadFailedError);
         }
         // Only now tell the rep the call is over. The rep's screen reacts to
         // this (a "bye" over the transport) by showing "Finish in Tom
@@ -165,11 +181,11 @@ export function VideoCallInterface({
         setStage("done");
       } catch (err) {
         finalizingRef.current = false;
-        setError(err instanceof Error ? err.message : "Could not upload the recording.");
+        setError(err instanceof Error ? err.message : messages.couldNotUploadError);
         setStage("error");
       }
     },
-    [videoSessionId],
+    [videoSessionId, messages],
   );
 
   const switchCamera = useCallback(async () => {
@@ -183,11 +199,11 @@ export function VideoCallInterface({
       setError(null);
     } catch (err) {
       const detail = err instanceof Error && err.name ? ` (${err.name})` : "";
-      setError(`Couldn't switch camera${detail}. Staying on the current one.`);
+      setError(messages.switchCameraError(detail));
     } finally {
       switchingRef.current = false;
     }
-  }, [applyCamera, isFrontCamera, stage]);
+  }, [applyCamera, isFrontCamera, stage, messages]);
 
   const onAppMessage = useCallback(
     (msg: AppMessage) => {
@@ -237,9 +253,7 @@ export function VideoCallInterface({
     const init = async () => {
       try {
         if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-          throw new Error(
-            "Camera access needs HTTPS. Open this link over HTTPS or use localhost on a computer.",
-          );
+          throw new Error(messages.cameraHttpsError);
         }
 
         micStreamRef.current = await navigator.mediaDevices.getUserMedia({
@@ -253,7 +267,7 @@ export function VideoCallInterface({
         const video = videoRef.current;
         const recCanvas = recCanvasRef.current;
         const overlay = overlayRef.current;
-        if (!video || !recCanvas || !overlay) throw new Error("The recorder failed to start.");
+        if (!video || !recCanvas || !overlay) throw new Error(messages.recorderFailedError);
 
         await new Promise<void>((resolve) => {
           if (video.videoWidth > 0) return resolve();
@@ -333,8 +347,7 @@ export function VideoCallInterface({
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
         };
-        recorder.onerror = () =>
-          setError("Recording stopped unexpectedly. Please end the call and try again.");
+        recorder.onerror = () => setError(messages.recordingStoppedError);
         recorder.start(1000);
 
         // live call (skipped when no signaling Worker is configured)
@@ -385,9 +398,7 @@ export function VideoCallInterface({
         setError(null);
       } catch (err) {
         if (cancelled) return;
-        setError(
-          err instanceof Error ? err.message : "Couldn't start the camera or microphone.",
-        );
+        setError(err instanceof Error ? err.message : messages.couldNotStartCameraError);
         setStage("error");
         teardown();
       }
@@ -426,7 +437,7 @@ export function VideoCallInterface({
   }, []);
 
   const submitContact = useCallback(
-    async (fields: { name: string; phone: string; email: string; note: string }) => {
+    async (fields: ContactFields) => {
       const res = await fetch(`/api/video-sessions/${videoSessionId}/contact`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -434,13 +445,13 @@ export function VideoCallInterface({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || "Couldn't send your details.");
+        throw new Error(body.error || messages.couldNotSendDetailsError);
       }
       callRef.current?.send({ type: "contact-submitted" });
       setContactSent(true);
       setContactOpen(false);
     },
-    [videoSessionId],
+    [videoSessionId, messages],
   );
 
   const stageBusy = stage === "ending";
@@ -450,8 +461,8 @@ export function VideoCallInterface({
       <div className="video-call-container">
         <div className="done-card">
           <div className="done-mark" aria-hidden="true">✓</div>
-          <h1>Thanks — your walkthrough is in.</h1>
-          <p>{repEmail} has your recording and will follow up with an estimate. You can close this page.</p>
+          <h1>{messages.doneTitle}</h1>
+          <p>{messages.doneBody(repEmail)}</p>
         </div>
       </div>
     );
@@ -462,10 +473,10 @@ export function VideoCallInterface({
       <div className="video-call-container">
         <div className="done-card">
           <div className="done-mark done-mark--warn" aria-hidden="true">!</div>
-          <h1>The call couldn&rsquo;t continue</h1>
-          <p>{error ?? "Something went wrong."}</p>
+          <h1>{messages.errorTitle}</h1>
+          <p>{error ?? messages.somethingWrong}</p>
           <button className="button button--primary" onClick={() => window.location.reload()}>
-            Try again
+            {messages.tryAgain}
           </button>
         </div>
       </div>
@@ -475,19 +486,19 @@ export function VideoCallInterface({
   return (
     <div className="video-call-container">
       <div className="video-call-header">
-        <h1>Live walkthrough</h1>
+        <h1>{messages.pageTitle}</h1>
         <p className="call-status">
           {stage === "init"
-            ? "Starting your camera…"
+            ? messages.startingCamera
             : !signalingUrl
-              ? "Recording your walkthrough"
+              ? messages.recordingSolo
               : repHere
-                ? `Connected with ${repEmail}`
+                ? messages.connectedWith(repEmail)
                 : callState === "reconnecting"
-                  ? "Reconnecting…"
+                  ? messages.reconnecting
                   : callState === "failed"
-                    ? "Couldn't reach the call — still recording your walkthrough"
-                    : `Waiting for ${repEmail} to join…`}
+                    ? messages.callFailedStillRecording
+                    : messages.waitingForRep(repEmail)}
         </p>
       </div>
 
@@ -518,9 +529,10 @@ export function VideoCallInterface({
               className={`remote-pip${repHere && repVideoReady ? "" : " remote-pip--empty"}`}
             />
           )}
-          {stage === "init" && <div className="video-placeholder">Starting camera…</div>}
+          {stage === "init" && <div className="video-placeholder">{messages.startingCamera}</div>}
           {contactOpen && (
             <ContactSheet
+              locale={locale}
               onSubmit={submitContact}
               onSkip={() => setContactOpen(false)}
             />
@@ -530,7 +542,7 @@ export function VideoCallInterface({
         {error && <div className="error-message">{error}</div>}
         {contactSent && (
           <p className="call-status" style={{ color: "#7ee08a" }}>
-            ✓ Your details were sent to {repEmail}.
+            {messages.detailsSentTo(repEmail)}
           </p>
         )}
 
@@ -540,25 +552,23 @@ export function VideoCallInterface({
             onClick={switchCamera}
             disabled={stage !== "live" || stageBusy}
           >
-            {isFrontCamera ? "📸 Show the room" : "🙂 Show my face"}
+            {isFrontCamera ? messages.showTheRoom : messages.showMyFace}
           </button>
           <button
             className="button button--primary"
             onClick={() => finalize()}
             disabled={stage !== "live" || stageBusy}
           >
-            {stageBusy ? "Sending…" : "End & send"}
+            {stageBusy ? messages.sending : messages.endAndSend}
           </button>
         </div>
 
         <div className="video-info">
           <p className="recording-indicator">
-            {stage === "live" && "🔴 Recording"}
-            {stageBusy && "📤 Sending your walkthrough…"}
+            {stage === "live" && messages.recordingIndicator}
+            {stageBusy && messages.sendingWalkthrough}
           </p>
-          <p className="session-info">
-            Drag on the video to point. This call is recorded for your estimate.
-          </p>
+          <p className="session-info">{messages.dragToPoint}</p>
         </div>
       </div>
     </div>
@@ -566,15 +576,22 @@ export function VideoCallInterface({
 }
 
 function ContactSheet({
+  locale,
   onSubmit,
   onSkip,
 }: {
-  onSubmit: (f: { name: string; phone: string; email: string; note: string }) => Promise<void>;
+  locale: Locale;
+  onSubmit: (f: ContactFields) => Promise<void>;
   onSkip: () => void;
 }) {
+  const messages = MESSAGES[locale];
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [moveDate, setMoveDate] = useState("");
+  const [homeSize, setHomeSize] = useState("");
+  const [currentAddress, setCurrentAddress] = useState("");
+  const [destinationAddress, setDestinationAddress] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -584,37 +601,76 @@ function ContactSheet({
       className="contact-sheet"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!name && !phone && !email) {
-          setErr("Add at least a name, phone, or email.");
+        if (!name.trim()) {
+          setErr(messages.nameRequiredError);
           return;
         }
         setBusy(true);
         setErr("");
         try {
-          await onSubmit({ name, phone, email, note });
+          await onSubmit({
+            name,
+            phone,
+            email,
+            note,
+            moveDate,
+            homeSize,
+            currentAddress,
+            destinationAddress,
+          });
         } catch (e2) {
-          setErr(e2 instanceof Error ? e2.message : "Couldn't send.");
+          setErr(e2 instanceof Error ? e2.message : messages.couldNotSendError);
           setBusy(false);
         }
       }}
     >
-      <h2>Your contact details</h2>
-      <p>Your rep asked for these so they can follow up with your estimate.</p>
-      <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <h2>{messages.contactTitle}</h2>
+      <p>{messages.contactIntro}</p>
       <input
-        placeholder="Phone"
+        placeholder={messages.namePlaceholder}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        required
+      />
+      <input
+        placeholder={messages.phonePlaceholder}
         inputMode="tel"
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
       />
       <input
-        placeholder="Email"
+        placeholder={messages.emailPlaceholder}
         inputMode="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
       />
+      <label>
+        <span>{messages.moveDateLabel}</span>
+        <input type="date" value={moveDate} onChange={(e) => setMoveDate(e.target.value)} />
+      </label>
+      <label>
+        <span>{messages.homeSizeLabel}</span>
+        <select value={homeSize} onChange={(e) => setHomeSize(e.target.value)}>
+          <option value="">{messages.homeSizeChoose}</option>
+          {HOME_SIZES.map((size) => (
+            <option key={size.value} value={size.value}>
+              {size[locale]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <input
+        placeholder={messages.currentAddressPlaceholder}
+        value={currentAddress}
+        onChange={(e) => setCurrentAddress(e.target.value)}
+      />
+      <input
+        placeholder={messages.destinationAddressPlaceholder}
+        value={destinationAddress}
+        onChange={(e) => setDestinationAddress(e.target.value)}
+      />
       <textarea
-        placeholder="Anything else (optional)"
+        placeholder={messages.notePlaceholder}
         rows={2}
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -622,10 +678,10 @@ function ContactSheet({
       {err && <p className="contact-sheet__err">{err}</p>}
       <div className="contact-sheet__row">
         <button type="button" className="button button--secondary" onClick={onSkip} disabled={busy}>
-          Not now
+          {messages.notNow}
         </button>
         <button type="submit" className="button button--primary" disabled={busy}>
-          {busy ? "Sending…" : "Send to rep"}
+          {busy ? messages.sending : messages.sendToRep}
         </button>
       </div>
     </form>
