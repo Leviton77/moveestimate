@@ -359,13 +359,38 @@ final class TME_Admin
                     </div>
 
                     <aside class="tme-review-side">
-                        <section class="tme-panel tme-details"><h2><?php esc_html_e('Client details', 'tom-moving-estimate'); ?></h2><dl>
-                            <dt><?php esc_html_e('Email', 'tom-moving-estimate'); ?></dt><dd><a href="mailto:<?php echo esc_attr($session->email); ?>"><?php echo esc_html($session->email); ?></a></dd>
-                            <dt><?php esc_html_e('Phone', 'tom-moving-estimate'); ?></dt><dd><a href="tel:<?php echo esc_attr($session->phone); ?>"><?php echo esc_html($session->phone); ?></a></dd>
-                            <dt><?php esc_html_e('Move date', 'tom-moving-estimate'); ?></dt><dd><?php echo esc_html(wp_date('F j, Y', strtotime($session->move_date . ' 12:00:00'))); ?></dd>
-                            <dt><?php esc_html_e('Home size', 'tom-moving-estimate'); ?></dt><dd><?php echo esc_html($session->estimated_size); ?></dd>
-                            <?php if ($session->special_items) : ?><dt><?php esc_html_e('Special items / notes', 'tom-moving-estimate'); ?></dt><dd><?php echo nl2br(esc_html($session->special_items)); ?></dd><?php endif; ?>
-                        </dl></section>
+                        <section class="tme-panel tme-details tme-details--edit">
+                            <h2><?php esc_html_e('Client details', 'tom-moving-estimate'); ?></h2>
+                            <p class="description"><?php esc_html_e('Editable — fill in or correct anything the customer didn’t give during a live call.', 'tom-moving-estimate'); ?></p>
+                            <label><span><?php esc_html_e('Name', 'tom-moving-estimate'); ?></span>
+                                <input type="text" name="client_name" maxlength="120" value="<?php echo esc_attr($session->client_name); ?>"></label>
+                            <label><span><?php esc_html_e('Email', 'tom-moving-estimate'); ?></span>
+                                <input type="email" name="email" maxlength="190" value="<?php echo esc_attr($session->email); ?>"></label>
+                            <label><span><?php esc_html_e('Phone', 'tom-moving-estimate'); ?></span>
+                                <input type="text" name="phone" maxlength="40" value="<?php echo esc_attr($session->phone); ?>"></label>
+                            <label><span><?php esc_html_e('Move date', 'tom-moving-estimate'); ?></span>
+                                <input type="date" name="move_date" value="<?php echo esc_attr($session->move_date); ?>"></label>
+                            <label><span><?php esc_html_e('Home size', 'tom-moving-estimate'); ?></span>
+                                <?php
+                                $size_options = array('Studio', '1 bedroom', '2 bedrooms', '3 bedrooms', '4+ bedrooms', 'House', 'Storage unit');
+                                if ($session->estimated_size !== '' && !in_array($session->estimated_size, $size_options, true)) {
+                                    $size_options[] = $session->estimated_size;
+                                }
+                                ?>
+                                <select name="estimated_size">
+                                    <option value=""><?php esc_html_e('Not specified', 'tom-moving-estimate'); ?></option>
+                                    <?php foreach ($size_options as $size) : ?>
+                                        <option value="<?php echo esc_attr($size); ?>" <?php selected($session->estimated_size, $size); ?>><?php echo esc_html($size); ?></option>
+                                    <?php endforeach; ?>
+                                </select></label>
+                            <label><span><?php esc_html_e('Current address', 'tom-moving-estimate'); ?></span>
+                                <input type="text" name="current_address" maxlength="255" value="<?php echo esc_attr($session->current_address); ?>"></label>
+                            <label><span><?php esc_html_e('Destination address', 'tom-moving-estimate'); ?></span>
+                                <input type="text" name="destination_address" maxlength="255" value="<?php echo esc_attr($session->destination_address); ?>"></label>
+                            <?php if ($session->special_items) : ?>
+                                <p class="description"><strong><?php esc_html_e('From the customer:', 'tom-moving-estimate'); ?></strong> <?php echo nl2br(esc_html($session->special_items)); ?></p>
+                            <?php endif; ?>
+                        </section>
 
                         <section class="tme-panel"><label><strong><?php esc_html_e('Status', 'tom-moving-estimate'); ?></strong><select name="status"><?php foreach (array('new' => 'New', 'reviewed' => 'Reviewed', 'quoted' => 'Quoted') as $value => $label) : ?><option value="<?php echo esc_attr($value); ?>" <?php selected($session->status, $value); ?>><?php echo esc_html($label); ?></option><?php endforeach; ?></select></label></section>
 
@@ -398,12 +423,29 @@ final class TME_Admin
         }
         $notes = mb_substr(sanitize_textarea_field(wp_unslash($_POST['rep_notes'] ?? '')), 0, 20000);
         $annotations = self::sanitize_annotations(wp_unslash($_POST['annotations'] ?? '[]'));
+
+        // Client details are editable so a rep can fill in or correct anything
+        // a live call left blank -- but never let a blank/malformed submission
+        // wipe out a NOT NULL column; fall back to the existing value instead.
+        $client_name = mb_substr(sanitize_text_field(wp_unslash($_POST['client_name'] ?? '')), 0, 120);
+        $move_date = sanitize_text_field(wp_unslash($_POST['move_date'] ?? ''));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $move_date)) {
+            $move_date = $session->move_date;
+        }
+
         $data = array(
-            'status'      => $status,
-            'rep_notes'   => $notes,
-            'annotations' => wp_json_encode($annotations),
+            'status'               => $status,
+            'rep_notes'            => $notes,
+            'annotations'          => wp_json_encode($annotations),
+            'client_name'          => $client_name !== '' ? $client_name : $session->client_name,
+            'email'                => mb_substr(sanitize_email(wp_unslash($_POST['email'] ?? '')), 0, 190),
+            'phone'                => mb_substr(sanitize_text_field(wp_unslash($_POST['phone'] ?? '')), 0, 40),
+            'move_date'            => $move_date,
+            'estimated_size'       => mb_substr(sanitize_text_field(wp_unslash($_POST['estimated_size'] ?? '')), 0, 32),
+            'current_address'      => mb_substr(sanitize_text_field(wp_unslash($_POST['current_address'] ?? '')), 0, 255),
+            'destination_address'  => mb_substr(sanitize_text_field(wp_unslash($_POST['destination_address'] ?? '')), 0, 255),
         );
-        $formats = array('%s', '%s', '%s');
+        $formats = array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
         $message = __('Estimate saved.', 'tom-moving-estimate');
 
         if (isset($_POST['ai_report'])) {
