@@ -30,6 +30,12 @@ function wp_parse_args($args, $defaults = array())
     $args = is_array($args) ? $args : array();
     return array_merge($defaults, $args);
 }
+// Real wp_date() formats in the site's local timezone; this harness has no
+// site timezone to convert to, so it stands in for "format this absolute
+// timestamp" -- the behavior under test is that callers pass a real
+// timestamp (derived by treating a stored value as UTC) rather than
+// printing a stored UTC string as if it were already local.
+function wp_date($format, $timestamp = null) { return gmdate($format, $timestamp ?? time()); }
 
 // WordPress ships mbstring or a polyfill; the bundled test PHP may lack it.
 if (!function_exists('mb_substr')) {
@@ -124,6 +130,28 @@ check('clip: under limit', call_private('clip', array(' hi ', 40)), 'hi');
 check('to_mysql: ISO', call_private('to_mysql', array('2026-09-03T19:22:00Z')), '2026-09-03 19:22:00');
 check('to_mysql: empty', call_private('to_mysql', array('')), '');
 check('to_mysql: junk', call_private('to_mysql', array('not a date')), '');
+
+// --- imported_note --------------------------------------------------
+// Regression: the rep note used to print the stored UTC datetime as if it
+// were already local time (off by the site's UTC offset, e.g. 4 hours for
+// Eastern Daylight Time). It must format the UTC value as an absolute
+// timestamp instead of treating the string as local.
+
+check(
+    'imported_note: with rep name',
+    call_private('imported_note', array('2026-09-04 18:00:00', 'Jordan Rep')),
+    'Imported from a live walkthrough on ' . gmdate('F j, Y, g:i a', strtotime('2026-09-04 18:00:00 UTC')) . ' with Jordan Rep.'
+);
+check(
+    'imported_note: blank rep falls back to "a representative"',
+    call_private('imported_note', array('2026-09-04 18:00:00', '')),
+    'Imported from a live walkthrough on ' . gmdate('F j, Y, g:i a', strtotime('2026-09-04 18:00:00 UTC')) . ' with a representative.'
+);
+check(
+    'imported_note: does not print the raw UTC string verbatim',
+    !str_contains(call_private('imported_note', array('2026-09-04 18:00:00', 'Jordan')), '2026-09-04 18:00:00'),
+    true
+);
 
 // --- settings / is_configured -------------------------------------
 

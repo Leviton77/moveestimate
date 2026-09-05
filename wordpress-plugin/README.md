@@ -98,8 +98,41 @@ report view and as the email body.
 | `includes/class-tme-admin.php` | `submission_label()` made `public` (reused by the new class); new admin-post actions `tme_view_lead_report` (renders the report + a "Send by email" form, prepopulated with every `tme_manage_estimates` user's email) and `tme_email_lead_report` (validates recipients, `wp_mail()`s the report text); "Create lead report" button added next to the submission badge on the review screen |
 | `readme.txt` | stable tag + changelog entry |
 
+## 1.2.0-rc11 — two bugs found while testing rc10 on staging
+
+- The rep note auto-added when a live walkthrough is imported ("Imported
+  from a live walkthrough on...") printed the stored UTC timestamp as if it
+  were already local time — 4 hours off on this site's timezone. Extracted
+  into `TME_Live_Call::imported_note()`, which now converts through
+  `wp_date()` before formatting. Covered by 3 new checks in
+  `tests/live-call-harness.php`.
+- Clicking "Send by email" on the lead report could land on WordPress's
+  generic "The link you followed has expired" page, losing whatever the rep
+  had typed into the recipient field. Root cause not fully confirmed — the
+  page's own nonce check (opening "Create lead report") worked fine, so the
+  most likely explanation is the report page (a standalone admin-post.php
+  response with a form embedded, the first of its kind in this plugin)
+  sitting open, or the host's edge cache serving it to a different session
+  than it was generated for; either way the nonce embedded in the form no
+  longer matched at submit time. `email_lead_report()` now verifies the
+  nonce manually instead of via `check_admin_referer()`: on a mismatch it
+  redirects back to a fresh copy of the report (new nonce) with the typed
+  recipient list preserved and a plain-language banner, instead of dying.
+  `view_lead_report()` also now sends an explicit `Cache-Control: no-store`
+  header as a second line of defense against the caching theory.
+
 ## Checks
 
+- **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained
+  3 checks for `imported_note()` (correct local-time conversion, rep-name
+  fallback, and a regression guard that the raw UTC string is never printed
+  verbatim). The nonce-graceful-failure change in `email_lead_report()` has
+  no dedicated harness test — it isn't a small pure helper like the rest of
+  what these harnesses cover, so it needs a real staging retest instead:
+  open "Create lead report", leave the tab for a bit (or just try sending
+  right away), confirm the send works, and if "expired" ever shows again,
+  confirm it now lands back on the report with the recipient field intact
+  rather than a dead-end page.
 - **rc10:** `php -l` clean on every file in the plugin. New
   `tests/lead-report-harness.php` (27 checks) covers `TME_Lead_Report::build_text()`
   — core fields, optional sections only appearing when populated, live-call
@@ -107,10 +140,7 @@ report view and as the email body.
   mattress-bags/open-questions text, and `TME_Admin::parse_emails()`
   (comma/semicolon splitting, trimming, deduping, dropping invalid
   addresses). `tests/live-call-harness.php` and `tests/annotations-harness.php`
-  still pass unchanged. Not yet exercised on a real WordPress — please
-  smoke-test on staging: open "Create lead report" on a real estimate,
-  confirm the text looks right (with and without a saved AI report), and
-  send a test email.
+  still pass unchanged.
 - **rc1-rc9:** `php -l` clean on all files; `php tests/live-call-harness.php`
   and `php tests/annotations-harness.php` (from the repo root) passed —
   helper-logic checks (phone → E.164, link message, settings, cron schedule,

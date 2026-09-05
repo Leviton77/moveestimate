@@ -614,11 +614,21 @@ final class TME_Admin
         }
         $ai_report = TME_AI_Report::decode((string) ($session->ai_report_current ?? ''));
         $text = TME_Lead_Report::build_text($session, $ai_report);
-        $recipients = TME_Lead_Report::default_recipients();
+        // After a failed send, the rep's typed recipient list round-trips
+        // back here via ?to=... so they don't have to retype it.
+        $recipients = isset($_GET['to']) ? sanitize_text_field(wp_unslash($_GET['to'])) : TME_Lead_Report::default_recipients();
         $sent = !empty($_GET['tme_sent']);
         $mail_error = !empty($_GET['tme_mail_error']);
+        $nonce_expired = !empty($_GET['tme_nonce_expired']);
 
         nocache_headers();
+        // Belt-and-suspenders beyond nocache_headers(): this page embeds a
+        // one-time-feeling nonce in a form, and some host-level edge caches
+        // don't reliably honor Cache-Control on admin-post.php. A cached
+        // copy served to a different session would carry a nonce that can
+        // never verify for that visitor, which looks exactly like an
+        // expired link.
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private');
         header('Content-Type: text/html; charset=' . get_option('blog_charset', 'UTF-8'));
         header('X-Robots-Tag: noindex, nofollow, noarchive');
         header('X-Content-Type-Options: nosniff');
@@ -655,7 +665,8 @@ final class TME_Admin
         <p class="muted"><?php echo esc_html($session->client_name !== '' ? $session->client_name : __('Unnamed customer', 'tom-moving-estimate')); ?> — <?php esc_html_e('Estimate', 'tom-moving-estimate'); ?> #<?php echo esc_html((string) absint($session->id)); ?></p>
 
         <?php if ($sent) : ?><div class="notice-banner success"><?php esc_html_e('Report emailed.', 'tom-moving-estimate'); ?></div><?php endif; ?>
-        <?php if ($mail_error) : ?><div class="notice-banner error"><?php esc_html_e('The email could not be sent. Check the recipient addresses and try again.', 'tom-moving-estimate'); ?></div><?php endif; ?>
+        <?php if ($nonce_expired) : ?><div class="notice-banner error"><?php esc_html_e('That took a bit too long and the send button had gone stale. Your recipient list is still below — check it and press Send by email again.', 'tom-moving-estimate'); ?></div>
+        <?php elseif ($mail_error) : ?><div class="notice-banner error"><?php esc_html_e('The email could not be sent. Check the recipient addresses and try again.', 'tom-moving-estimate'); ?></div><?php endif; ?>
 
         <pre><?php echo esc_html($text); ?></pre>
 
@@ -678,18 +689,32 @@ final class TME_Admin
     {
         self::require_capability();
         $id = absint($_POST['session_id'] ?? 0);
-        check_admin_referer('tme_email_lead_report_' . $id);
+        $raw_to = (string) wp_unslash($_POST['to'] ?? '');
+        $view_url = wp_nonce_url(admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $id), 'tme_view_lead_report_' . $id);
+
+        // A manual check instead of check_admin_referer() so a stale/mismatched
+        // nonce (the report page sat open a while, or was served from a cache
+        // that doesn't key on the logged-in session) sends the rep back to a
+        // fresh copy of the report with what they typed still in the field,
+        // instead of WordPress's dead-end "link expired" page.
+        $nonce = isset($_POST['_wpnonce']) ? (string) wp_unslash($_POST['_wpnonce']) : '';
+        if (!wp_verify_nonce($nonce, 'tme_email_lead_report_' . $id)) {
+            wp_safe_redirect(add_query_arg(array(
+                'tme_nonce_expired' => '1',
+                'to'                => rawurlencode($raw_to),
+            ), $view_url));
+            exit;
+        }
+
         $session = TME_DB::get($id);
         if (!$session) {
             wp_die(esc_html__('Estimate not found.', 'tom-moving-estimate'), '', array('response' => 404));
         }
 
-        $to = self::parse_emails((string) wp_unslash($_POST['to'] ?? ''));
+        $to = self::parse_emails($raw_to);
         if (!$to) {
             $to = self::parse_emails(TME_Lead_Report::default_recipients());
         }
-
-        $view_url = wp_nonce_url(admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $id), 'tme_view_lead_report_' . $id);
         if (!$to) {
             wp_safe_redirect(add_query_arg('tme_mail_error', '1', $view_url));
             exit;

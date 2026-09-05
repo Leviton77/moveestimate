@@ -575,12 +575,7 @@ final class TME_Live_Call
             'live_call_id'       => $call_id,
             'live_rep'           => self::clip($rep, 190),
             'live_started_at'    => $started ?: $now,
-            'rep_notes'          => sprintf(
-                /* translators: 1: date, 2: rep name */
-                __("Imported from a live walkthrough on %1\$s with %2\$s.", 'tom-moving-estimate'),
-                $started ?: $now,
-                $rep ?: __('a representative', 'tom-moving-estimate')
-            ),
+            'rep_notes'          => self::imported_note($started ?: $now, $rep),
         ));
 
         TME_Retention::schedule_for_session($id, $uploaded_ts);
@@ -806,5 +801,21 @@ final class TME_Live_Call
     {
         $ts = strtotime($value);
         return $ts ? gmdate('Y-m-d H:i:s', $ts) : '';
+    }
+
+    /**
+     * $utc_datetime is a MySQL datetime string in UTC (as stored on the
+     * session row) -- format it in the site's local timezone for the rep
+     * note, rather than printing the raw UTC value as if it were local time.
+     */
+    private static function imported_note(string $utc_datetime, string $rep): string
+    {
+        $ts = strtotime($utc_datetime . ' UTC');
+        return sprintf(
+            /* translators: 1: date and time, 2: rep name */
+            __('Imported from a live walkthrough on %1$s with %2$s.', 'tom-moving-estimate'),
+            $ts ? wp_date('F j, Y, g:i a', $ts) : $utc_datetime,
+            $rep !== '' ? $rep : __('a representative', 'tom-moving-estimate')
+        );
     }
 }
