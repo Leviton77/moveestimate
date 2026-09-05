@@ -74,15 +74,47 @@ uploaded, and imported into a new "Live walkthrough" estimate):
     `E_WARNING` (undefined `size` key) in the `draw` branch, found by the new
     test's regression case.
 
+## 1.2.0-rc4 — rc9
+
+Delivered independently to the user across several install/test cycles on
+staging (tab-closing UX, richer contact form, English/French calls, editable
+Client details). Not written up here in detail; see the `readme.txt`
+changelog entries for rc4 through rc9.
+
+## 1.2.0-rc10 — lead report
+
+**New file** — `includes/class-tme-lead-report.php` (tracked here in full):
+builds a full plain-text "lead report" for one estimate — client details,
+submission/status, live-call info, rep notes, and (when one has been saved) a
+readable summary of the AI moving report (summary stats, inventory by room,
+disassembly, mattress bags, open questions). Used both for the on-screen
+report view and as the email body.
+
+**Edited files:**
+
+| File | Change |
+|------|--------|
+| `tom-moving-estimate.php` | version `1.2.0-rc9` → `1.2.0-rc10`; `require_once` for the new class |
+| `includes/class-tme-admin.php` | `submission_label()` made `public` (reused by the new class); new admin-post actions `tme_view_lead_report` (renders the report + a "Send by email" form, prepopulated with every `tme_manage_estimates` user's email) and `tme_email_lead_report` (validates recipients, `wp_mail()`s the report text); "Create lead report" button added next to the submission badge on the review screen |
+| `readme.txt` | stable tag + changelog entry |
+
 ## Checks
 
-- `php -l` clean on all files.
-- `php tests/live-call-harness.php` (from the repo root) — helper-logic checks
-  (phone → E.164, link message, settings, cron schedule). Needs `mbstring` or
-  the polyfill the harness declares.
-- `php tests/annotations-harness.php` — `sanitize_annotations()` checks:
-  laser round-trips, coordinates clamp 0-100, note/draw regressions, unknown
-  types still rejected.
+- **rc10:** `php -l` clean on every file in the plugin. New
+  `tests/lead-report-harness.php` (27 checks) covers `TME_Lead_Report::build_text()`
+  — core fields, optional sections only appearing when populated, live-call
+  vs. photos vs. video submissions, the AI-report summary/rooms/disassembly/
+  mattress-bags/open-questions text, and `TME_Admin::parse_emails()`
+  (comma/semicolon splitting, trimming, deduping, dropping invalid
+  addresses). `tests/live-call-harness.php` and `tests/annotations-harness.php`
+  still pass unchanged. Not yet exercised on a real WordPress — please
+  smoke-test on staging: open "Create lead report" on a real estimate,
+  confirm the text looks right (with and without a saved AI report), and
+  send a test email.
+- **rc1-rc9:** `php -l` clean on all files; `php tests/live-call-harness.php`
+  and `php tests/annotations-harness.php` (from the repo root) passed —
+  helper-logic checks (phone → E.164, link message, settings, cron schedule,
+  annotation sanitizing).
 - API contract matches the Sites `/api/calls*` smoke in `feat/wp-live-call-api`.
-- **Not yet run on a real WordPress** — verify on GoDaddy staging: DB upgrade,
-  the admin screens, a real call → import → row + R2 object + retention.
+- Verified end-to-end on GoDaddy staging through rc9 (DB upgrade, admin
+  screens, a real call → import → row + R2 object + retention).

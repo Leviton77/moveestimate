@@ -15,6 +15,8 @@ final class TME_Admin
         add_action('admin_enqueue_scripts', array(__CLASS__, 'assets'));
         add_action('admin_post_tme_save_session', array(__CLASS__, 'save_session'));
         add_action('admin_post_tme_load_synthetic_ai_report', array(__CLASS__, 'load_synthetic_ai_report'));
+        add_action('admin_post_tme_view_lead_report', array(__CLASS__, 'view_lead_report'));
+        add_action('admin_post_tme_email_lead_report', array(__CLASS__, 'email_lead_report'));
         if (class_exists('TME_AI_Export')) {
             add_action('admin_post_tme_download_ai_csv', array(__CLASS__, 'download_ai_csv'));
             add_action('admin_post_tme_download_ai_json', array(__CLASS__, 'download_ai_json'));
@@ -183,7 +185,7 @@ final class TME_Admin
         return '<span class="tme-video-state' . $class . '">Ready</span><small>Deletes in ' . $days . ' day' . ($days === 1 ? '' : 's') . '</small>';
     }
 
-    private static function submission_label(object $session): string
+    public static function submission_label(object $session): string
     {
         if ($session->submission_type === 'photos') {
             return __('Photos', 'tom-moving-estimate');
@@ -235,7 +237,7 @@ final class TME_Admin
             <?php self::render_notice(); ?>
             <div class="tme-admin-heading"><div><h1><?php echo esc_html($session->client_name); ?></h1><p><?php echo esc_html($session->current_address); ?> → <?php echo esc_html($session->destination_address); ?></p></div><span class="tme-status tme-status--<?php echo esc_attr($session->status); ?>"><?php echo esc_html(ucfirst($session->status)); ?></span></div>
 
-            <p class="tme-submission-summary"><strong><?php esc_html_e('Submission:', 'tom-moving-estimate'); ?></strong> <span class="tme-method-badge"><?php echo esc_html(self::submission_label($session)); ?></span></p>
+            <p class="tme-submission-summary"><strong><?php esc_html_e('Submission:', 'tom-moving-estimate'); ?></strong> <span class="tme-method-badge"><?php echo esc_html(self::submission_label($session)); ?></span> <a class="button" target="_blank" rel="noopener" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $session->id), 'tme_view_lead_report_' . $session->id)); ?>"><?php esc_html_e('Create lead report', 'tom-moving-estimate'); ?></a></p>
 
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-tme-review-form>
                 <input type="hidden" name="action" value="tme_save_session">
@@ -599,6 +601,118 @@ final class TME_Admin
             wp_die(esc_html__('This estimate does not have a saved AI report to export.', 'tom-moving-estimate'), '', array('response' => 404));
         }
         return array($session, $report);
+    }
+
+    public static function view_lead_report(): void
+    {
+        self::require_capability();
+        $id = absint($_GET['session_id'] ?? 0);
+        check_admin_referer('tme_view_lead_report_' . $id);
+        $session = TME_DB::get($id);
+        if (!$session) {
+            wp_die(esc_html__('Estimate not found.', 'tom-moving-estimate'), '', array('response' => 404));
+        }
+        $ai_report = TME_AI_Report::decode((string) ($session->ai_report_current ?? ''));
+        $text = TME_Lead_Report::build_text($session, $ai_report);
+        $recipients = TME_Lead_Report::default_recipients();
+        $sent = !empty($_GET['tme_sent']);
+        $mail_error = !empty($_GET['tme_mail_error']);
+
+        nocache_headers();
+        header('Content-Type: text/html; charset=' . get_option('blog_charset', 'UTF-8'));
+        header('X-Robots-Tag: noindex, nofollow, noarchive');
+        header('X-Content-Type-Options: nosniff');
+        ?>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?php echo esc_html(sprintf(__('Lead report — %s', 'tom-moving-estimate'), (string) ($session->client_name !== '' ? $session->client_name : __('Customer', 'tom-moving-estimate')))); ?></title>
+    <style>
+        :root{--navy:#16324f;--blue:#1663a7;--ink:#16202a;--muted:#5d6975;--line:#d9e1e8;--soft:#f4f7fa;--good:#176b43;--bad:#a3261a}
+        *{box-sizing:border-box}
+        body{margin:0;background:#eef2f5;color:var(--ink);font:14px/1.45 Arial,Helvetica,sans-serif}
+        main{max-width:820px;margin:30px auto;background:#fff;padding:38px 44px;box-shadow:0 8px 28px rgba(22,50,79,.12)}
+        h1{color:var(--navy);font-size:24px;margin:0 0 4px}
+        .muted{color:var(--muted)}
+        .toolbar{max-width:820px;margin:20px auto 0;display:flex;justify-content:flex-end;gap:10px}
+        .btn{border:0;border-radius:5px;background:var(--blue);color:#fff;font-weight:700;padding:11px 18px;cursor:pointer;font-size:14px;text-decoration:none;display:inline-block}
+        pre{white-space:pre-wrap;word-wrap:break-word;font:13px/1.55 ui-monospace,Consolas,monospace;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:18px 20px;margin-top:18px}
+        .send-form{margin-top:22px;border-top:1px solid var(--line);padding-top:18px}
+        .send-form label{display:block;font-weight:700;color:var(--navy);margin-bottom:6px}
+        .send-form input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:5px;font-size:14px;margin-bottom:12px}
+        .notice-banner{border-radius:6px;padding:10px 14px;margin-top:16px;font-weight:600}
+        .notice-banner.success{background:#e7f6ee;color:var(--good)}
+        .notice-banner.error{background:#fdeceb;color:var(--bad)}
+        @media print{.toolbar,.send-form,.notice-banner{display:none}main{max-width:none;margin:0;box-shadow:none}}
+    </style>
+</head>
+<body>
+    <div class="toolbar"><a class="btn" href="#" onclick="window.print();return false;"><?php esc_html_e('Print / Save as PDF', 'tom-moving-estimate'); ?></a></div>
+    <main>
+        <h1><?php esc_html_e('Lead report', 'tom-moving-estimate'); ?></h1>
+        <p class="muted"><?php echo esc_html($session->client_name !== '' ? $session->client_name : __('Unnamed customer', 'tom-moving-estimate')); ?> — <?php esc_html_e('Estimate', 'tom-moving-estimate'); ?> #<?php echo esc_html((string) absint($session->id)); ?></p>
+
+        <?php if ($sent) : ?><div class="notice-banner success"><?php esc_html_e('Report emailed.', 'tom-moving-estimate'); ?></div><?php endif; ?>
+        <?php if ($mail_error) : ?><div class="notice-banner error"><?php esc_html_e('The email could not be sent. Check the recipient addresses and try again.', 'tom-moving-estimate'); ?></div><?php endif; ?>
+
+        <pre><?php echo esc_html($text); ?></pre>
+
+        <form class="send-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="tme_email_lead_report">
+            <input type="hidden" name="session_id" value="<?php echo esc_attr($session->id); ?>">
+            <?php wp_nonce_field('tme_email_lead_report_' . $session->id); ?>
+            <label for="tme-lead-report-to"><?php esc_html_e('Send by email to', 'tom-moving-estimate'); ?></label>
+            <input type="text" id="tme-lead-report-to" name="to" value="<?php echo esc_attr($recipients); ?>" placeholder="rep@example.com, rep2@example.com">
+            <button class="btn" type="submit"><?php esc_html_e('Send by email', 'tom-moving-estimate'); ?></button>
+        </form>
+    </main>
+</body>
+</html>
+        <?php
+        exit;
+    }
+
+    public static function email_lead_report(): void
+    {
+        self::require_capability();
+        $id = absint($_POST['session_id'] ?? 0);
+        check_admin_referer('tme_email_lead_report_' . $id);
+        $session = TME_DB::get($id);
+        if (!$session) {
+            wp_die(esc_html__('Estimate not found.', 'tom-moving-estimate'), '', array('response' => 404));
+        }
+
+        $to = self::parse_emails((string) wp_unslash($_POST['to'] ?? ''));
+        if (!$to) {
+            $to = self::parse_emails(TME_Lead_Report::default_recipients());
+        }
+
+        $view_url = wp_nonce_url(admin_url('admin-post.php?action=tme_view_lead_report&session_id=' . $id), 'tme_view_lead_report_' . $id);
+        if (!$to) {
+            wp_safe_redirect(add_query_arg('tme_mail_error', '1', $view_url));
+            exit;
+        }
+
+        $ai_report = TME_AI_Report::decode((string) ($session->ai_report_current ?? ''));
+        $text = TME_Lead_Report::build_text($session, $ai_report);
+        $sent = wp_mail($to, TME_Lead_Report::subject($session), $text);
+
+        wp_safe_redirect(add_query_arg($sent ? 'tme_sent' : 'tme_mail_error', '1', $view_url));
+        exit;
+    }
+
+    private static function parse_emails(string $raw): array
+    {
+        $emails = array();
+        foreach (preg_split('/[,;]+/', $raw) ?: array() as $candidate) {
+            $candidate = trim(sanitize_email($candidate));
+            if ($candidate !== '' && is_email($candidate)) {
+                $emails[] = $candidate;
+            }
+        }
+        return array_values(array_unique($emails));
     }
 
     private static function json_time_to_mysql(string $value): ?string
