@@ -22,6 +22,8 @@ final class TME_Admin
             add_action('admin_post_tme_download_ai_json', array(__CLASS__, 'download_ai_json'));
             add_action('admin_post_tme_print_ai_report', array(__CLASS__, 'print_ai_report'));
         }
+        add_action('admin_post_tme_delete_estimate', array(__CLASS__, 'delete_estimate'));
+        add_action('admin_post_tme_bulk_delete_estimates', array(__CLASS__, 'bulk_delete_estimates'));
         add_action('admin_post_tme_delete_video', array(__CLASS__, 'delete_video'));
         add_action('admin_post_tme_download_video', array(__CLASS__, 'download_video'));
         add_action('admin_post_tme_delete_photo', array(__CLASS__, 'delete_photo'));
@@ -121,30 +123,62 @@ final class TME_Admin
                 <button class="button" type="submit"><?php esc_html_e('Filter', 'tom-moving-estimate'); ?></button>
             </form>
 
-            <div class="tme-table-card">
-                <table class="widefat striped tme-table">
-                    <thead><tr><th><?php esc_html_e('Customer', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Move', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Status', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Submission', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Received', 'tom-moving-estimate'); ?></th><th></th></tr></thead>
-                    <tbody>
-                    <?php foreach ($sessions as $session) :
-                        $review = admin_url('admin.php?page=tme-estimates&session=' . $session->id);
-                        ?>
-                        <tr>
-                            <td><strong><a href="<?php echo esc_url($review); ?>"><?php echo esc_html($session->client_name); ?></a></strong><small><?php echo esc_html($session->email); ?><br><?php echo esc_html($session->phone); ?></small></td>
-                            <td><strong><?php echo esc_html(wp_date('M j, Y', strtotime($session->move_date . ' 12:00:00'))); ?></strong><small><?php echo esc_html($session->estimated_size); ?><br><?php echo esc_html($session->current_address); ?></small></td>
-                            <td><span class="tme-status tme-status--<?php echo esc_attr($session->status); ?>"><?php echo esc_html(ucfirst($session->status)); ?></span></td>
-                            <td>
-                                <span class="tme-method-badge"><?php echo esc_html(self::submission_label($session)); ?></span>
-                                <?php echo wp_kses_post(self::media_status($session)); ?>
-                            </td>
-                            <td><?php echo esc_html(wp_date('M j, Y', strtotime($session->created_at . ' UTC'))); ?></td>
-                            <td><a class="button button-small" href="<?php echo esc_url($review); ?>"><?php esc_html_e('Review', 'tom-moving-estimate'); ?></a></td>
-                        </tr>
-                    <?php endforeach; ?>
-                    <?php if (!$sessions) : ?><tr><td colspan="6" class="tme-empty"><?php esc_html_e('No estimate requests found.', 'tom-moving-estimate'); ?></td></tr><?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-tme-bulk-form>
+                <input type="hidden" name="action" value="tme_bulk_delete_estimates">
+                <?php wp_nonce_field('tme_bulk_delete_estimates'); ?>
+                <div class="tme-bulk-actions">
+                    <button class="button button-link-delete" type="submit"><?php esc_html_e('Delete selected', 'tom-moving-estimate'); ?></button>
+                </div>
+                <div class="tme-table-card">
+                    <table class="widefat striped tme-table">
+                        <thead><tr><th class="tme-check-col"><input type="checkbox" data-tme-select-all aria-label="<?php esc_attr_e('Select all', 'tom-moving-estimate'); ?>"></th><th><?php esc_html_e('Customer', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Move', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Status', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Submission', 'tom-moving-estimate'); ?></th><th><?php esc_html_e('Received', 'tom-moving-estimate'); ?></th><th></th></tr></thead>
+                        <tbody>
+                        <?php foreach ($sessions as $session) :
+                            $review = admin_url('admin.php?page=tme-estimates&session=' . $session->id);
+                            ?>
+                            <tr>
+                                <td class="tme-check-col"><input type="checkbox" name="session_ids[]" value="<?php echo esc_attr($session->id); ?>" aria-label="<?php echo esc_attr(sprintf(__('Select %s', 'tom-moving-estimate'), $session->client_name)); ?>"></td>
+                                <td><strong><a href="<?php echo esc_url($review); ?>"><?php echo esc_html($session->client_name); ?></a></strong><small><?php echo esc_html($session->email); ?><br><?php echo esc_html($session->phone); ?></small></td>
+                                <td><strong><?php echo esc_html(wp_date('M j, Y', strtotime($session->move_date . ' 12:00:00'))); ?></strong><small><?php echo esc_html($session->estimated_size); ?><br><?php echo esc_html($session->current_address); ?></small></td>
+                                <td><span class="tme-status tme-status--<?php echo esc_attr($session->status); ?>"><?php echo esc_html(ucfirst($session->status)); ?></span></td>
+                                <td>
+                                    <span class="tme-method-badge"><?php echo esc_html(self::submission_label($session)); ?></span>
+                                    <?php echo wp_kses_post(self::media_status($session)); ?>
+                                </td>
+                                <td><?php echo esc_html(wp_date('M j, Y', strtotime($session->created_at . ' UTC'))); ?></td>
+                                <td><a class="button button-small" href="<?php echo esc_url($review); ?>"><?php esc_html_e('Review', 'tom-moving-estimate'); ?></a></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (!$sessions) : ?><tr><td colspan="7" class="tme-empty"><?php esc_html_e('No estimate requests found.', 'tom-moving-estimate'); ?></td></tr><?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </form>
         </div>
+        <script>
+        (function () {
+            var form = document.querySelector('[data-tme-bulk-form]');
+            if (!form) return;
+            var selectAll = form.querySelector('[data-tme-select-all]');
+            var boxes = function () { return form.querySelectorAll('input[name="session_ids[]"]'); };
+            if (selectAll) {
+                selectAll.addEventListener('change', function () {
+                    Array.prototype.forEach.call(boxes(), function (box) { box.checked = selectAll.checked; });
+                });
+            }
+            form.addEventListener('submit', function (event) {
+                var checked = Array.prototype.filter.call(boxes(), function (box) { return box.checked; });
+                if (!checked.length) {
+                    event.preventDefault();
+                    window.alert('<?php echo esc_js(__('Select at least one estimate to delete.', 'tom-moving-estimate')); ?>');
+                    return;
+                }
+                if (!window.confirm('<?php echo esc_js(__('Delete the selected estimates? This cannot be undone.', 'tom-moving-estimate')); ?>')) {
+                    event.preventDefault();
+                }
+            });
+        })();
+        </script>
         <?php
     }
 
@@ -403,6 +437,12 @@ final class TME_Admin
                         <?php endif; ?>
 
                         <button class="button button-primary button-hero tme-save" type="submit"><?php esc_html_e('Save changes', 'tom-moving-estimate'); ?></button>
+
+                        <section class="tme-panel tme-retention-card">
+                            <h2><?php esc_html_e('Delete this estimate', 'tom-moving-estimate'); ?></h2>
+                            <p><?php esc_html_e('Permanently removes this lead, its notes, and any photo or video still in private storage. This cannot be undone.', 'tom-moving-estimate'); ?></p>
+                            <div class="tme-side-actions"><a class="button button-link-delete" data-tme-delete data-tme-delete-label="this estimate" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tme_delete_estimate&session_id=' . $session->id), 'tme_delete_estimate_' . $session->id)); ?>"><?php esc_html_e('Delete estimate', 'tom-moving-estimate'); ?></a></div>
+                        </section>
                     </aside>
                 </div>
             </form>
@@ -797,6 +837,72 @@ final class TME_Admin
             }
         }
         return $clean;
+    }
+
+    public static function delete_estimate(): void
+    {
+        self::require_capability();
+        $id = absint($_GET['session_id'] ?? 0);
+        check_admin_referer('tme_delete_estimate_' . $id);
+        $session = TME_DB::get($id);
+        if (!$session) {
+            wp_die(esc_html__('Estimate not found.', 'tom-moving-estimate'), '', array('response' => 404));
+        }
+
+        $media_result = TME_Retention::delete_media($id, true);
+        $media_error = is_wp_error($media_result) ? $media_result->get_error_message() : '';
+
+        if (!TME_DB::delete($id)) {
+            wp_safe_redirect(self::notice_url('tme-estimates', __('The estimate could not be deleted.', 'tom-moving-estimate'), 'error', array('session' => $id)));
+            exit;
+        }
+
+        $message = $media_error !== ''
+            ? sprintf(
+                /* translators: %s: storage error message */
+                __('Estimate deleted. Its stored photo or video may not have been removed from private storage: %s', 'tom-moving-estimate'),
+                $media_error
+            )
+            : __('Estimate deleted.', 'tom-moving-estimate');
+        wp_safe_redirect(self::notice_url('tme-estimates', $message, $media_error !== '' ? 'error' : 'success'));
+        exit;
+    }
+
+    public static function bulk_delete_estimates(): void
+    {
+        self::require_capability();
+        check_admin_referer('tme_bulk_delete_estimates');
+        $ids = self::parse_ids(wp_unslash($_POST['session_ids'] ?? array()));
+
+        $deleted = 0;
+        foreach ($ids as $id) {
+            TME_Retention::delete_media($id, true);
+            if (TME_DB::delete($id)) {
+                $deleted++;
+            }
+        }
+
+        $message = $deleted > 0
+            ? sprintf(
+                /* translators: %d: number of estimates deleted */
+                _n('%d estimate deleted.', '%d estimates deleted.', $deleted, 'tom-moving-estimate'),
+                $deleted
+            )
+            : __('No estimates were selected.', 'tom-moving-estimate');
+        wp_safe_redirect(self::notice_url('tme-estimates', $message, $deleted > 0 ? 'success' : 'error'));
+        exit;
+    }
+
+    private static function parse_ids($raw): array
+    {
+        $ids = array();
+        foreach ((array) $raw as $candidate) {
+            $id = absint($candidate);
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+        return array_values(array_unique($ids));
     }
 
     public static function delete_video(): void

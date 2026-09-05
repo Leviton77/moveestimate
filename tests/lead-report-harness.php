@@ -1,8 +1,9 @@
 <?php
 /**
- * Standalone checks for TME_Lead_Report and the recipient/email-parsing
- * helpers on TME_Admin. No WordPress required — the few WP primitives the
- * loaded methods touch are stubbed below.
+ * Standalone checks for TME_Lead_Report and the small request-parsing
+ * helpers on TME_Admin (recipient emails, bulk-delete checkbox ids). No
+ * WordPress required — the few WP primitives the loaded methods touch are
+ * stubbed below.
  *
  * Run:  php tests/lead-report-harness.php
  */
@@ -190,6 +191,15 @@ check(
     call_private_static('TME_Admin', 'parse_emails', array('a@x.test, b@x.test; a@x.test ,not-an-email, c@x.test')) === array('a@x.test', 'b@x.test', 'c@x.test')
 );
 check('parse_emails: empty string yields empty array', call_private_static('TME_Admin', 'parse_emails', array('')) === array());
+
+// --- TME_Admin::parse_ids (bulk-delete checkbox values) -------------------
+
+check(
+    'parse_ids: coerces to int, drops zero/non-numeric, dedupes',
+    call_private_static('TME_Admin', 'parse_ids', array(array('3', '5', '3', 'not-a-number', '0', '7'))) === array(3, 5, 7)
+);
+check('parse_ids: missing/empty value yields empty array', call_private_static('TME_Admin', 'parse_ids', array(array())) === array());
+check('parse_ids: a single scalar (not an array) is still handled', call_private_static('TME_Admin', 'parse_ids', array('4')) === array(4));
 
 if ($failures > 0) {
     echo "\n{$failures} check(s) FAILED.\n";

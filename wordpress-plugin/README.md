@@ -147,6 +147,44 @@ dependency entirely:
   (sending mail is the one state-changing step here, so it's the one step
   that should stay CSRF-protected) — that part of rc11 is unchanged.
 
+## 1.2.0-rc13 — delete a lead, one at a time or in bulk
+
+**New:** `TME_DB::delete()` (now tracked here too, since this is the first
+change to touch it) — a plain row delete, `!== false`-checked like the
+existing `update()`.
+
+**`includes/class-tme-admin.php`:**
+
+- New admin-post actions `tme_delete_estimate` (single) and
+  `tme_bulk_delete_estimates` (many). Both call
+  `TME_Retention::delete_media($id, true)` first (best-effort R2 cleanup —
+  the existing helper already handles photos vs. video vs. nothing to do)
+  and then `TME_DB::delete($id)`. Bulk failures aren't itemized, just
+  counted ("3 estimates deleted."); the single-delete path does surface a
+  storage error if the R2 cleanup failed but still deletes the record.
+- `detail_page()`: a "Delete this estimate" card at the bottom of the
+  sidebar, styled and confirm-dialog-wired the same way as the existing
+  "Delete now" / "Delete all photos" links (`button-link-delete` +
+  `data-tme-delete`, already bound by `assets/js/admin.js` on this page —
+  no JS changes needed).
+- `list_page()`: the table is now wrapped in its own POST form with a
+  per-row checkbox, a header "select all" checkbox, and a "Delete
+  selected" button. A small inline `<script>` (not worth a separate
+  enqueued file) wires select-all and a confirm dialog that also blocks
+  submitting with nothing checked.
+- New `TME_Admin::parse_ids()` — sanitizes the posted `session_ids[]`
+  checkbox values the same way `parse_emails()` sanitizes the recipient
+  field (coerce, drop invalid/zero, dedupe).
+- `assets/css/admin.css`: `.tme-check-col` (narrow checkbox column) and
+  `.tme-bulk-actions .button-link-delete` (red, matching the existing
+  `.tme-side-actions` treatment).
+
+The single-delete and bulk-delete request handlers aren't unit tested —
+same reasoning as `save_session()`/`delete_video()` etc. elsewhere in this
+plugin: they're thin glue over `TME_DB`/`TME_Retention`/R2, not pure
+helpers. `parse_ids()` is a pure helper and does have 3 new checks in
+`tests/lead-report-harness.php`.
+
 ## Checks
 
 - **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained
