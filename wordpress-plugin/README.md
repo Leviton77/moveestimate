@@ -185,6 +185,28 @@ plugin: they're thin glue over `TME_DB`/`TME_Retention`/R2, not pure
 helpers. `parse_ids()` is a pure helper and does have 3 new checks in
 `tests/lead-report-harness.php`.
 
+## 1.2.0-rc14 — "Email from my mail app" no longer eats the Call ready screen
+
+**`includes/class-tme-live-call.php`** — `render_call_ready()`: the
+`mailto:` "Email from my mail app" link (and the `sms:` "Text from my
+phone" link beside it) now carry `target="_blank" rel="noopener"`.
+
+A rep whose browser hands `mailto:` to a **web** mail client (Gmail,
+Outlook.com) had the current tab navigated to that compose page, losing
+the Call ready screen — rep link included — with no way back. A native
+desktop mail app opens out-of-process and never had this problem, which
+is why the button "worked on one machine and not another". Opening the
+handoff in a new tab fixes it for both.
+
+| File | Change |
+|------|--------|
+| `tom-moving-estimate.php` | version `1.2.0-rc13` → `1.2.0-rc14` |
+
+Markup-only change to one admin view; `php -l` clean, no harness change
+(nothing pure to test). Retest on staging: on the Call ready screen click
+"Email from my mail app" and confirm the Gmail/Outlook compose opens in a
+new tab with the Call ready screen still there behind it.
+
 ## Checks
 
 - **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained
