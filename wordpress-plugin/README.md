@@ -207,6 +207,45 @@ Markup-only change to one admin view; `php -l` clean, no harness change
 "Email from my mail app" and confirm the Gmail/Outlook compose opens in a
 new tab with the Call ready screen still there behind it.
 
+## 1.2.0-rc15 — the customer's link now reads as tommoving.ca
+
+The SMS / email a customer receives carried the raw Sites URL
+(`…temach.chatgpt.site/video-call/<uuid>?t=<token>`) — nothing about it
+said "Tom Moving", which is a hard sell to click from a text.
+
+**`includes/class-tme-live-call.php`:**
+
+- `handle_start()` now also mints a random 16-hex `slug`, stores
+  `tme_live_slug_<slug> → <call_id>` (same 7-day TTL as the call
+  transient), and keeps the slug on the call transient.
+- New `route_public_link()` on `parse_request`: `GET /call/<slug>` looks
+  up the call and `wp_redirect()`s (302, `nocache_headers()`) to the real
+  `client_url`. Unknown/expired slug → a bilingual `wp_die()` "link
+  expired" page (HTTP 410). No auth: the slug is random (64-bit) and the
+  URL it forwards to still carries its own signed token — same
+  "possession of the link = access" model the raw link already had. No
+  rewrite rule / permalink flush; the handler matches the path itself and
+  returns immediately on anything that isn't `call/<hex>`.
+- New `client_link()` — returns `home_url('/call/<slug>')`, or the raw
+  `client_url` for calls started before this (their transient has no
+  `slug`). `handle_send()` (SMS + email body) and `render_call_ready()`
+  (the copy field, the `sms:` / `mailto:` buttons) all use it.
+
+The visible link is now e.g. `https://www.tommoving.ca/call/3f9a2b7c1d4e6f80`
+(exact host follows the WP Site Address). One invisible 302 hop to the
+Sites call page.
+
+| File | Change |
+|------|--------|
+| `tom-moving-estimate.php` | version `1.2.0-rc14` → `1.2.0-rc15` |
+
+`route_public_link()` / `client_link()` aren't harness-tested — same
+reasoning as the other request handlers here (thin glue over transients +
+`wp_redirect`). Retest on staging: start a call, confirm the "Send the
+customer their link" field shows a `tommoving.ca/call/…` URL, open it in a
+private window → lands on the call page; let a call's transient lapse (or
+hit `/call/<made-up-hex>`) → the 410 "link expired" page.
+
 ## Checks
 
 - **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained
