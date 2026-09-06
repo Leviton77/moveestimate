@@ -30,6 +30,7 @@ final class TME_Live_Call
         add_action('admin_menu', array(__CLASS__, 'menu'), 20);
         add_action('admin_post_tme_live_start', array(__CLASS__, 'handle_start'));
         add_action('admin_post_tme_live_send', array(__CLASS__, 'handle_send'));
+        add_action('admin_post_tme_live_set_phone', array(__CLASS__, 'handle_set_phone'));
         add_action('admin_post_tme_live_import', array(__CLASS__, 'handle_import'));
         add_action('admin_post_tme_live_save_settings', array(__CLASS__, 'handle_save_settings'));
         // Front-end: the branded /call/<slug> stand-in for the raw Sites link.
@@ -263,6 +264,23 @@ final class TME_Live_Call
             <?php if (str_starts_with($client_link, home_url('/call/'))) : ?>
                 <p class="description"><?php esc_html_e('This tommoving.ca link forwards to the secure call page — send it as-is.', 'tom-moving-estimate'); ?></p>
             <?php endif; ?>
+
+            <?php // Let the rep add/change the customer's mobile here, so the
+                  // text options appear without starting the call over. ?>
+            <p>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <input type="hidden" name="action" value="tme_live_set_phone">
+                    <input type="hidden" name="call_id" value="<?php echo esc_attr($call_id); ?>">
+                    <?php wp_nonce_field('tme_live_set_phone_' . $call_id); ?>
+                    <label for="tme-live-phone"><?php esc_html_e('Customer mobile', 'tom-moving-estimate'); ?></label>
+                    <input type="text" id="tme-live-phone" name="client_phone" class="regular-text" maxlength="40" value="<?php echo esc_attr($phone); ?>" placeholder="+1 613 555 0123">
+                    <button class="button" type="submit"><?php echo $phone ? esc_html__('Update', 'tom-moving-estimate') : esc_html__('Add', 'tom-moving-estimate'); ?></button>
+                    <?php if (!$phone) : ?>
+                        <span class="description"><?php esc_html_e('Add a number to text the link.', 'tom-moving-estimate'); ?></span>
+                    <?php endif; ?>
+                </form>
+            </p>
+
             <p>
                 <?php if ($phone) : ?>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
@@ -410,6 +428,37 @@ final class TME_Live_Call
         }
 
         wp_safe_redirect(self::notice_url(__('Unknown send method.', 'tom-moving-estimate'), 'error', array('call' => $call_id)));
+        exit;
+    }
+
+    /**
+     * Add or change the customer's mobile on an in-progress call, from the Call
+     * ready screen — so the "Text the link" options can appear without the rep
+     * starting the whole call over. Keeps the call's original expiry.
+     */
+    public static function handle_set_phone(): void
+    {
+        self::require_cap();
+        $call_id = isset($_POST['call_id']) ? sanitize_text_field(wp_unslash($_POST['call_id'])) : '';
+        check_admin_referer('tme_live_set_phone_' . $call_id);
+
+        $call = preg_match(self::UUID_RE, $call_id) ? get_transient('tme_live_' . $call_id) : false;
+        if (!is_array($call)) {
+            wp_safe_redirect(self::notice_url(__('That call link has expired. Start a new call.', 'tom-moving-estimate'), 'error'));
+            exit;
+        }
+
+        $call['client_phone'] = self::post_text('client_phone', 40);
+        $ttl = max(MINUTE_IN_SECONDS, self::START_TTL - (time() - (int) ($call['created_at'] ?? time())));
+        set_transient('tme_live_' . $call_id, $call, $ttl);
+
+        wp_safe_redirect(self::notice_url(
+            $call['client_phone'] !== ''
+                ? __('Mobile number saved.', 'tom-moving-estimate')
+                : __('Mobile number cleared.', 'tom-moving-estimate'),
+            'success',
+            array('call' => $call_id)
+        ));
         exit;
     }
 
