@@ -235,16 +235,26 @@ The visible link is now e.g. `https://www.tommoving.ca/call/3f9a2b7c1d4e6f80`
 (exact host follows the WP Site Address). One invisible 302 hop to the
 Sites call page.
 
+**Also:** the Call ready screen gets a small **Customer mobile** field (new
+`tme_live_set_phone` admin-post → `handle_set_phone()`), so a rep who
+started the call without a number can add one there and get the "Text the
+link" / "Text from my phone" options — which only render when the call has
+a `client_phone` — without starting over. The edit keeps the call's
+original expiry (`START_TTL` minus elapsed since `created_at`), not a
+fresh 7 days.
+
 | File | Change |
 |------|--------|
 | `tom-moving-estimate.php` | version `1.2.0-rc14` → `1.2.0-rc15` |
 
-`route_public_link()` / `client_link()` aren't harness-tested — same
-reasoning as the other request handlers here (thin glue over transients +
-`wp_redirect`). Retest on staging: start a call, confirm the "Send the
-customer their link" field shows a `tommoving.ca/call/…` URL, open it in a
-private window → lands on the call page; let a call's transient lapse (or
-hit `/call/<made-up-hex>`) → the 410 "link expired" page.
+`route_public_link()` / `client_link()` / `handle_set_phone()` aren't
+harness-tested — same reasoning as the other request handlers here (thin
+glue over transients + `wp_redirect`). Retest on staging: start a call,
+confirm the "Send the customer their link" field shows a `tommoving.ca/call/…`
+URL, open it in a private window → lands on the call page; let a call's
+transient lapse (or hit `/call/<made-up-hex>`) → the 410 "link expired"
+page; start a call with no mobile, add one via the new field on the Call
+ready screen → "Text the link" / "Text from my phone" appear.
 
 ## Checks
 
