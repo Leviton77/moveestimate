@@ -32,6 +32,8 @@ final class TME_Live_Call
         add_action('admin_post_tme_live_send', array(__CLASS__, 'handle_send'));
         add_action('admin_post_tme_live_import', array(__CLASS__, 'handle_import'));
         add_action('admin_post_tme_live_save_settings', array(__CLASS__, 'handle_save_settings'));
+        // Front-end: the branded /call/<slug> stand-in for the raw Sites link.
+        add_action('parse_request', array(__CLASS__, 'route_public_link'));
 
         add_filter('cron_schedules', array(__CLASS__, 'cron_schedule'));
         add_action(self::CRON_HOOK, array(__CLASS__, 'sweep'));
@@ -237,13 +239,13 @@ final class TME_Live_Call
 
     private static function render_call_ready(string $call_id, array $call): void
     {
-        $client_url = (string) ($call['client_url'] ?? '');
-        $rep_url    = (string) ($call['rep_url'] ?? '');
-        $name       = (string) ($call['client_name'] ?? '');
-        $phone      = (string) ($call['client_phone'] ?? '');
-        $email      = (string) ($call['client_email'] ?? '');
-        $locale     = (string) ($call['client_locale'] ?? 'en') === 'fr' ? 'fr' : 'en';
-        $sms_body   = self::link_message($name, $client_url, $locale);
+        $client_link = self::client_link($call);
+        $rep_url     = (string) ($call['rep_url'] ?? '');
+        $name        = (string) ($call['client_name'] ?? '');
+        $phone       = (string) ($call['client_phone'] ?? '');
+        $email       = (string) ($call['client_email'] ?? '');
+        $locale      = (string) ($call['client_locale'] ?? 'en') === 'fr' ? 'fr' : 'en';
+        $sms_body    = self::link_message($name, $client_link, $locale);
         ?>
         <div class="tme-table-card" style="padding:20px;max-width:720px">
             <h2><?php esc_html_e('Call ready', 'tom-moving-estimate'); ?></h2>
@@ -257,7 +259,10 @@ final class TME_Live_Call
             <p class="description"><?php esc_html_e('Or, if you\'d rather just click through:', 'tom-moving-estimate'); ?> <a class="button button-primary" href="<?php echo esc_url($rep_url); ?>"><?php esc_html_e('Open the call', 'tom-moving-estimate'); ?></a></p>
 
             <h3><?php esc_html_e('Send the customer their link', 'tom-moving-estimate'); ?></h3>
-            <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($client_url); ?>"></p>
+            <p><input type="text" class="large-text code" readonly onfocus="this.select()" value="<?php echo esc_attr($client_link); ?>"></p>
+            <?php if (str_starts_with($client_link, home_url('/call/'))) : ?>
+                <p class="description"><?php esc_html_e('This tommoving.ca link forwards to the secure call page — send it as-is.', 'tom-moving-estimate'); ?></p>
+            <?php endif; ?>
             <p>
                 <?php if ($phone) : ?>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline">
@@ -349,9 +354,16 @@ final class TME_Live_Call
             exit;
         }
 
+        // Random stand-in so the customer's SMS/email link reads as
+        // tommoving.ca; /call/<slug> resolves back to this call and 302s to
+        // the real (token-carrying) Sites URL.
+        $slug = bin2hex(random_bytes(8));
+        set_transient('tme_live_slug_' . $slug, $call_id, self::START_TTL);
+
         set_transient('tme_live_' . $call_id, array(
             'rep_url'       => (string) ($result['rep_url'] ?? ''),
             'client_url'    => (string) ($result['client_url'] ?? ''),
+            'slug'          => $slug,
             'client_name'   => self::post_text('client_name', 120),
             'client_phone'  => self::post_text('client_phone', 40),
             'client_email'  => self::post_text('client_email', 190),
@@ -377,7 +389,7 @@ final class TME_Live_Call
         }
         $method = sanitize_key(wp_unslash($_POST['method'] ?? ''));
         $locale = (string) ($call['client_locale'] ?? 'en') === 'fr' ? 'fr' : 'en';
-        $body   = self::link_message((string) $call['client_name'], (string) $call['client_url'], $locale);
+        $body   = self::link_message((string) $call['client_name'], self::client_link($call), $locale);
 
         if ($method === 'email') {
             $to = sanitize_email((string) $call['client_email']);
@@ -398,6 +410,57 @@ final class TME_Live_Call
         }
 
         wp_safe_redirect(self::notice_url(__('Unknown send method.', 'tom-moving-estimate'), 'error', array('call' => $call_id)));
+        exit;
+    }
+
+    /**
+     * Branded, short stand-in for the raw Sites client link: /call/<slug> on
+     * this site. Falls back to the raw Sites URL for calls started before the
+     * slug existed (their transient has no 'slug' key).
+     */
+    private static function client_link(array $call): string
+    {
+        $slug = (string) ($call['slug'] ?? '');
+        return $slug !== ''
+            ? home_url('/call/' . $slug)
+            : (string) ($call['client_url'] ?? '');
+    }
+
+    /**
+     * GET /call/<slug> — 302 to the real Sites call URL saved when the call
+     * started, so the link the customer receives reads as this site rather
+     * than the Sites deployment host. No auth: the slug is random and the URL
+     * it forwards to still carries its own signed token. Runs on every
+     * front-end request, so it bails on the first character that doesn't fit.
+     *
+     * @param WP $wp
+     */
+    public static function route_public_link($wp): void
+    {
+        $path = isset($wp->request) ? trim((string) $wp->request, '/') : '';
+        if (!preg_match('#^call/([0-9a-fA-F]{8,64})$#', $path, $m)) {
+            return;
+        }
+
+        nocache_headers();
+        $call_id = get_transient('tme_live_slug_' . strtolower($m[1]));
+        $call = ($call_id && preg_match(self::UUID_RE, (string) $call_id))
+            ? get_transient('tme_live_' . $call_id)
+            : false;
+        $target = is_array($call) ? (string) ($call['client_url'] ?? '') : '';
+        $scheme = $target !== '' ? (string) wp_parse_url($target, PHP_URL_SCHEME) : '';
+
+        if ($target === '' || ($scheme !== 'https' && $scheme !== 'http') || !filter_var($target, FILTER_VALIDATE_URL)) {
+            wp_die(
+                esc_html__('This walkthrough link has expired. Please contact your Tom Moving representative for a new one.', 'tom-moving-estimate')
+                . '<br><br>'
+                . esc_html__('Ce lien de visite a expiré. Veuillez communiquer avec votre représentant Tom Moving pour en obtenir un nouveau.', 'tom-moving-estimate'),
+                esc_html__('Link expired', 'tom-moving-estimate'),
+                array('response' => 410)
+            );
+        }
+
+        wp_redirect($target, 302);
         exit;
     }
 
