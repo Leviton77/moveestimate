@@ -98,6 +98,11 @@ export async function ensureDatabase() {
     "wp_request_id TEXT",
     "wp_ingested INTEGER NOT NULL DEFAULT 0",
     "client_locale TEXT",
+    // Which WordPress admin the rep should return to for "Finish in Tom
+    // Estimator" — set per call so one Sites deployment can serve more than
+    // one WordPress (staging vs production). Falls back to the WP_ADMIN_URL
+    // env var when null (calls from an older plugin).
+    "wp_admin_url TEXT",
   ]) {
     try {
       await db.prepare(`ALTER TABLE video_sessions ADD COLUMN ${column}`).run();
@@ -221,6 +226,8 @@ export type VideoSessionRecord = {
   wp_request_id: string | null;
   /** 0 or 1 — whether the WordPress plugin has pulled this completed call. */
   wp_ingested: number;
+  /** WordPress admin base URL the call was started from; null for older calls. */
+  wp_admin_url: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -329,6 +336,7 @@ export async function createWpCall(input: {
   repEmail: string;
   repName: string;
   clientLocale?: "en" | "fr";
+  wpAdminUrl?: string;
   contact?: { name?: string; phone?: string; email?: string };
 }) {
   await ensureDatabase();
@@ -339,14 +347,15 @@ export async function createWpCall(input: {
   const source = name || phone || email ? "rep-entered" : null;
   await database()
     .prepare(`INSERT INTO video_sessions
-      (id, rep_email, rep_name, client_locale, origin, status,
+      (id, rep_email, rep_name, client_locale, wp_admin_url, origin, status,
        contact_name, contact_phone, contact_email, contact_source)
-      VALUES (?, ?, ?, ?, 'wp', 'waiting', ?, ?, ?, ?)`)
+      VALUES (?, ?, ?, ?, ?, 'wp', 'waiting', ?, ?, ?, ?)`)
     .bind(
       id,
       input.repEmail || "rep@tommoving.ca",
       input.repName || "",
       input.clientLocale === "fr" ? "fr" : "en",
+      input.wpAdminUrl?.trim() || null,
       name,
       phone,
       email,

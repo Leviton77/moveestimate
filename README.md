@@ -42,7 +42,7 @@ for local dev; set them on the deployment for production):
 | `SIGNALING_URL` | `wss://` origin of the signaling Worker. Empty ⇒ the call is disabled and the walkthrough is recorded solo. |
 | `TURN_KEY_ID`, `TURN_API_TOKEN` | Cloudflare Realtime TURN key. Without them the call is STUN-only and fails behind strict NAT. Served to the browser as short-lived credentials by `GET /api/turn`. |
 | `WP_SHARED_SECRET` | Shared secret with the "Tom Moving Estimate" WordPress plugin. Server-to-server calls (`/api/calls*`) send it as `Authorization: Bearer`; it also signs the rep/client call-link tokens — that token, not a login, is what gates `/video-call/:id` and `/video-call/:id/rep` (see `app/call-token.ts`, `app/wp-auth.ts`). |
-| `WP_ADMIN_URL` | Base WordPress admin URL, used only to render the rep's "Finish in Tom Estimator" link on the call-ended screen. |
+| `WP_ADMIN_URL` | **Fallback** base WordPress admin URL for the rep's "Finish in Tom Estimator" link. Each call now records the admin URL of the WordPress it was started from (`wp_admin_url` on `POST /api/calls`); this env var is only used for calls that didn't send one. Set it to whichever WordPress is primary. |
 
 The rep starts a call from WordPress (`Move Estimates → Live Walkthrough`), which
 calls `POST /api/calls` and gets back signed rep/client links. When the call

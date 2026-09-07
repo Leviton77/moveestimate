@@ -26,10 +26,22 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid rep_email." }, { status: 400 });
   }
 
+  // Where the rep goes back to for "Finish in Tom Estimator" — one Sites
+  // deployment can serve more than one WordPress (staging vs production), so
+  // pin it per call rather than trusting the single WP_ADMIN_URL env var.
+  let wpAdminUrl = "";
+  try {
+    const u = new URL(str(payload.wp_admin_url, 300));
+    if (u.protocol === "https:" || u.protocol === "http:") wpAdminUrl = u.toString();
+  } catch {
+    /* not a usable URL — fall back to the env var on the rep page */
+  }
+
   const callId = await createWpCall({
     repEmail,
     repName: str(payload.rep_name, 200),
     clientLocale: payload.client_locale === "fr" ? "fr" : "en",
+    wpAdminUrl,
     contact: {
       name: str(payload.client_name, 200),
       phone: str(payload.client_phone, 60),
@@ -75,6 +87,9 @@ export async function GET(request: Request) {
       created_at: row.created_at,
       rep_email: row.rep_email,
       rep_name: row.rep_name ?? "",
+      // So a plugin serving one WordPress can skip calls started from another
+      // (e.g. staging's cron ignoring a production call). Empty for older calls.
+      wp_admin_url: row.wp_admin_url ?? "",
     })),
   });
 }
