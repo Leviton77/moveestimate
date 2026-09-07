@@ -64,12 +64,14 @@ final class TME_Live_Call
     public static function defaults(): array
     {
         return array(
-            'sites_base_url'    => '',
-            'shared_secret_enc' => '',
-            'twilio_sid'        => '',
-            'twilio_token_enc'  => '',
-            'twilio_from'       => '',
-            'country_code'      => '+1',
+            'sites_base_url'        => '',
+            'shared_secret_enc'     => '',
+            'twilio_sid'            => '', // Account SID (AC…) — always needed, it's in the request URL
+            'twilio_key_sid'        => '', // API key SID (SK…) — preferred auth username
+            'twilio_key_secret_enc' => '', // API key secret — preferred auth password
+            'twilio_token_enc'      => '', // Auth Token — fallback when no API key is set
+            'twilio_from'           => '',
+            'country_code'          => '+1',
         );
     }
 
@@ -96,10 +98,33 @@ final class TME_Live_Call
         return self::base_url() !== '' && self::shared_secret() !== '';
     }
 
+    /**
+     * HTTP Basic pair for the Twilio REST API. Prefers an API key (SK…/secret)
+     * — scoped and independently revocable — over the Account SID + Auth Token,
+     * which grants full account access. Returns ['', ''] when neither is set.
+     *
+     * @return array{0:string,1:string} [username, password]
+     */
+    private static function twilio_auth(): array
+    {
+        $s = self::settings();
+        $key_sid    = trim((string) $s['twilio_key_sid']);
+        $key_secret = trim(TME_Secrets::decrypt((string) $s['twilio_key_secret_enc']));
+        if ($key_sid !== '' && $key_secret !== '') {
+            return array($key_sid, $key_secret);
+        }
+        $token = trim(TME_Secrets::decrypt((string) $s['twilio_token_enc']));
+        if ($token !== '') {
+            return array(trim((string) $s['twilio_sid']), $token);
+        }
+        return array('', '');
+    }
+
     private static function twilio_ready(): bool
     {
         $s = self::settings();
-        return $s['twilio_sid'] && $s['twilio_from'] && TME_Secrets::decrypt((string) $s['twilio_token_enc']) !== '';
+        [$user, $pass] = self::twilio_auth();
+        return $s['twilio_sid'] !== '' && $s['twilio_from'] !== '' && $user !== '' && $pass !== '';
     }
 
     // --- Sites API -------------------------------------------------------
@@ -331,9 +356,17 @@ final class TME_Live_Call
                         <td><input name="shared_secret" id="tme-shared-secret" type="password" class="regular-text" autocomplete="new-password" value="" placeholder="<?php echo $s['shared_secret_enc'] ? esc_attr__('•••••• saved', 'tom-moving-estimate') : ''; ?>">
                         <p class="description"><?php esc_html_e('Must match WP_SHARED_SECRET on the Sites deployment. Leave blank to keep the saved value.', 'tom-moving-estimate'); ?></p></td></tr>
                     <tr><th scope="row"><label for="tme-twilio-sid"><?php esc_html_e('Twilio Account SID', 'tom-moving-estimate'); ?></label></th>
-                        <td><input name="twilio_sid" id="tme-twilio-sid" type="text" class="regular-text" value="<?php echo esc_attr($s['twilio_sid']); ?>"></td></tr>
+                        <td><input name="twilio_sid" id="tme-twilio-sid" type="text" class="regular-text" value="<?php echo esc_attr($s['twilio_sid']); ?>" placeholder="AC…">
+                        <p class="description"><?php esc_html_e('From the Console dashboard. Always required — it identifies the account in every request.', 'tom-moving-estimate'); ?></p></td></tr>
+                    <tr><th scope="row"><label for="tme-twilio-key-sid"><?php esc_html_e('Twilio API key SID', 'tom-moving-estimate'); ?></label></th>
+                        <td><input name="twilio_key_sid" id="tme-twilio-key-sid" type="text" class="regular-text" value="<?php echo esc_attr($s['twilio_key_sid']); ?>" placeholder="SK…">
+                        <p class="description"><?php esc_html_e('Recommended over the Auth Token: a Standard API key (Console → Account → API keys & tokens) is scoped and can be revoked on its own. Used when both this and the secret are set.', 'tom-moving-estimate'); ?></p></td></tr>
+                    <tr><th scope="row"><label for="tme-twilio-key-secret"><?php esc_html_e('Twilio API key secret', 'tom-moving-estimate'); ?></label></th>
+                        <td><input name="twilio_key_secret" id="tme-twilio-key-secret" type="password" class="regular-text" autocomplete="new-password" value="" placeholder="<?php echo $s['twilio_key_secret_enc'] ? esc_attr__('•••••• saved', 'tom-moving-estimate') : ''; ?>">
+                        <p class="description"><?php esc_html_e('Shown once when the key is created. Leave blank to keep the saved value; enter “-” to clear it.', 'tom-moving-estimate'); ?></p></td></tr>
                     <tr><th scope="row"><label for="tme-twilio-token"><?php esc_html_e('Twilio Auth Token', 'tom-moving-estimate'); ?></label></th>
-                        <td><input name="twilio_token" id="tme-twilio-token" type="password" class="regular-text" autocomplete="new-password" value="" placeholder="<?php echo $s['twilio_token_enc'] ? esc_attr__('•••••• saved', 'tom-moving-estimate') : ''; ?>"></td></tr>
+                        <td><input name="twilio_token" id="tme-twilio-token" type="password" class="regular-text" autocomplete="new-password" value="" placeholder="<?php echo $s['twilio_token_enc'] ? esc_attr__('•••••• saved', 'tom-moving-estimate') : ''; ?>">
+                        <p class="description"><?php esc_html_e('Fallback, only used when no API key is set. Leave blank to keep the saved value; enter “-” to clear it.', 'tom-moving-estimate'); ?></p></td></tr>
                     <tr><th scope="row"><label for="tme-twilio-from"><?php esc_html_e('Twilio “from” number', 'tom-moving-estimate'); ?></label></th>
                         <td><input name="twilio_from" id="tme-twilio-from" type="text" class="regular-text" value="<?php echo esc_attr($s['twilio_from']); ?>" placeholder="+16135550100"></td></tr>
                     <tr><th scope="row"><label for="tme-country-code"><?php esc_html_e('Default country code', 'tom-moving-estimate'); ?></label></th>
@@ -559,6 +592,7 @@ final class TME_Live_Call
         $next = array(
             'sites_base_url' => esc_url_raw(trim((string) wp_unslash($_POST['sites_base_url'] ?? ''))),
             'twilio_sid'     => trim(sanitize_text_field(wp_unslash($_POST['twilio_sid'] ?? ''))),
+            'twilio_key_sid' => trim(sanitize_text_field(wp_unslash($_POST['twilio_key_sid'] ?? ''))),
             'twilio_from'    => trim(sanitize_text_field(wp_unslash($_POST['twilio_from'] ?? ''))),
             'country_code'   => trim(sanitize_text_field(wp_unslash($_POST['country_code'] ?? '+1'))),
         );
@@ -568,10 +602,18 @@ final class TME_Live_Call
             ? TME_Secrets::encrypt($secret)
             : (string) $current['shared_secret_enc'];
 
+        // Secret fields: a blank field keeps the stored value; a value of
+        // "-" clears it (so you can drop the API key and fall back to the
+        // Auth Token, or vice versa).
+        $key_secret = trim((string) wp_unslash($_POST['twilio_key_secret'] ?? ''));
+        $next['twilio_key_secret_enc'] = $key_secret === ''
+            ? (string) $current['twilio_key_secret_enc']
+            : ($key_secret === '-' ? '' : TME_Secrets::encrypt($key_secret));
+
         $token = trim((string) wp_unslash($_POST['twilio_token'] ?? ''));
-        $next['twilio_token_enc'] = $token !== ''
-            ? TME_Secrets::encrypt($token)
-            : (string) $current['twilio_token_enc'];
+        $next['twilio_token_enc'] = $token === ''
+            ? (string) $current['twilio_token_enc']
+            : ($token === '-' ? '' : TME_Secrets::encrypt($token));
 
         update_option(self::OPTION, $next, false);
         wp_safe_redirect(self::notice_url(__('Live walkthrough settings saved.', 'tom-moving-estimate')));
@@ -813,20 +855,21 @@ final class TME_Live_Call
     private static function twilio_send(string $to, string $body)
     {
         $s = self::settings();
-        $token = trim(TME_Secrets::decrypt((string) $s['twilio_token_enc']));
-        if (!$s['twilio_sid'] || !$token || !$s['twilio_from']) {
-            return new WP_Error('tme_twilio_unconfigured', __('Add the Twilio SID, token and from-number in settings.', 'tom-moving-estimate'));
+        $account_sid = trim((string) $s['twilio_sid']);
+        [$auth_user, $auth_pass] = self::twilio_auth();
+        if ($account_sid === '' || $auth_user === '' || $auth_pass === '' || $s['twilio_from'] === '') {
+            return new WP_Error('tme_twilio_unconfigured', __('Add the Twilio Account SID, an API key (or Auth Token) and a from-number in settings.', 'tom-moving-estimate'));
         }
         $e164 = self::to_e164($to, (string) $s['country_code']);
         if (!$e164) {
             return new WP_Error('tme_twilio_number', __('That mobile number does not look valid.', 'tom-moving-estimate'));
         }
         $response = wp_remote_post(
-            'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode((string) $s['twilio_sid']) . '/Messages.json',
+            'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode($account_sid) . '/Messages.json',
             array(
                 'timeout' => 20,
                 'headers' => array(
-                    'Authorization' => 'Basic ' . base64_encode($s['twilio_sid'] . ':' . $token),
+                    'Authorization' => 'Basic ' . base64_encode($auth_user . ':' . $auth_pass),
                 ),
                 'body' => array(
                     'From' => (string) $s['twilio_from'],

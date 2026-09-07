@@ -256,6 +256,39 @@ transient lapse (or hit `/call/<made-up-hex>`) → the 410 "link expired"
 page; start a call with no mobile, add one via the new field on the Call
 ready screen → "Text the link" / "Text from my phone" appear.
 
+## 1.2.0-rc16 — Twilio auth by API key, not just the Auth Token
+
+Twilio recommends a scoped, independently revocable API key over the
+Account Auth Token (which grants full account access).
+
+**`includes/class-tme-live-call.php`:**
+
+- New settings `twilio_key_sid` (`SK…`, plaintext identifier) and
+  `twilio_key_secret_enc` (encrypted like the token / shared secret).
+  `twilio_sid` (the Account `AC…` SID) stays — it's in the request URL
+  regardless of how you authenticate.
+- New `twilio_auth()` → returns the HTTP Basic `[user, pass]`: the API key
+  pair when both parts are set, else the Account SID + Auth Token, else
+  `['', '']`. `twilio_ready()` and `twilio_send()` both go through it, so
+  the REST call is unchanged apart from which credentials it signs with.
+- Settings screen gains **API key SID** + **API key secret** rows (with a
+  "recommended" note) above the Auth Token, which is relabelled as the
+  fallback. The two secret fields take `-` to clear (blank still keeps the
+  saved value) so you can move from token to key, or back.
+
+Migration is silent: an existing Auth-Token install has empty key fields,
+so `twilio_auth()` falls straight through to the token. No DB change.
+
+| File | Change |
+|------|--------|
+| `tom-moving-estimate.php` | version `1.2.0-rc15` → `1.2.0-rc16` |
+
+`php -l` clean (PHP 8.2). Not harness-tested — it's request-handler /
+HTTP-call glue. Retest on staging: create a Standard API key in the Twilio
+Console, paste the Account SID + key SID + key secret (leave Auth Token
+blank), "Text the link" → message sends; then blank the key SID and put
+the Auth Token back → still sends.
+
 ## Checks
 
 - **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained
