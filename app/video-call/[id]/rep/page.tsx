@@ -32,7 +32,12 @@ export default async function RepCallPage({
   }
 
   const signalingUrl = (env as unknown as { SIGNALING_URL?: string }).SIGNALING_URL ?? "";
-  const wpAdminUrl = (env as unknown as { WP_ADMIN_URL?: string }).WP_ADMIN_URL ?? "";
+  // The call remembers which WordPress started it; the env var is only the
+  // fallback for calls created before the plugin sent one.
+  const wpAdminUrl =
+    session.wp_admin_url ||
+    (env as unknown as { WP_ADMIN_URL?: string }).WP_ADMIN_URL ||
+    "";
 
   return (
     <main className="video-call-page">

@@ -393,6 +393,10 @@ final class TME_Live_Call
             'client_phone'  => self::post_text('client_phone', 40),
             'client_email'  => self::post_text('client_email', 190),
             'client_locale' => self::post_locale(),
+            // Pin the return-to admin per call, so one Sites deployment can
+            // serve this site and, say, a staging copy without the "Finish in
+            // Tom Estimator" link and the cron sweep crossing over.
+            'wp_admin_url'  => admin_url(),
         ));
         if (is_wp_error($result)) {
             wp_safe_redirect(self::notice_url($result->get_error_message(), 'error'));
@@ -750,13 +754,22 @@ final class TME_Live_Call
         if (is_wp_error($list) || empty($list['calls']) || !is_array($list['calls'])) {
             return;
         }
+        $here = untrailingslashit(admin_url());
         foreach ($list['calls'] as $entry) {
             $call_id = is_array($entry) ? (string) ($entry['call_id'] ?? '') : '';
-            if (preg_match(self::UUID_RE, $call_id)) {
-                $result = self::import_one($call_id);
-                if (is_wp_error($result)) {
-                    error_log('[tme-live] import ' . $call_id . ' failed: ' . $result->get_error_message());
-                }
+            if (!preg_match(self::UUID_RE, $call_id)) {
+                continue;
+            }
+            // Leave calls that were started from a different WordPress admin
+            // (e.g. production) for that site's own sweep. Calls with no
+            // recorded admin URL (older plugin) still get imported here.
+            $origin = is_array($entry) ? untrailingslashit((string) ($entry['wp_admin_url'] ?? '')) : '';
+            if ($origin !== '' && strcasecmp($origin, $here) !== 0) {
+                continue;
+            }
+            $result = self::import_one($call_id);
+            if (is_wp_error($result)) {
+                error_log('[tme-live] import ' . $call_id . ' failed: ' . $result->get_error_message());
             }
         }
     }

@@ -289,6 +289,36 @@ Console, paste the Account SID + key SID + key secret (leave Auth Token
 blank), "Text the link" → message sends; then blank the key SID and put
 the Auth Token back → still sends.
 
+## 1.2.0-rc17 — "Finish in Tom Estimator" returns to the right WordPress
+
+Staging and production share one Sites deployment, which only knows a
+single `WP_ADMIN_URL` — so a call started from staging still sent the rep
+(and the imported recording) to production.
+
+**Coordinated with the Sites app** (`app/api/calls/route.ts`,
+`app/video-call/[id]/rep/page.tsx`, `db/sessions.ts` — new nullable
+`video_sessions.wp_admin_url`): the call now records the admin URL it was
+started from, the rep page uses that for the "Finish in Tom Estimator"
+link, and `WP_ADMIN_URL` is only the fallback for calls that don't carry
+one.
+
+**`includes/class-tme-live-call.php`:**
+
+- `handle_start()` sends `wp_admin_url => admin_url()` on `POST /api/calls`.
+- `sweep()` skips any call whose returned `wp_admin_url` is set and doesn't
+  match this site's `admin_url()`, so staging's cron no longer imports (and
+  marks ingested) a production call, or vice versa. Calls with no recorded
+  URL (older plugin) are still imported.
+
+| File | Change |
+|------|--------|
+| `tom-moving-estimate.php` | version `1.2.0-rc16` → `1.2.0-rc17` |
+
+Needs the Sites app deployed together with this. `php -l` clean.
+Retest: start a call from **staging**, end it, click "Finish in Tom
+Estimator" → lands on **staging** `admin-post.php` and the lead imports
+into staging; the production queue is untouched. Repeat from production.
+
 ## Checks
 
 - **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained

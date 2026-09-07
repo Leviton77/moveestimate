@@ -16,6 +16,7 @@ TURN_API_TOKEN=""
 # ChatGPT rep sign-in). Generate with: openssl rand -hex 32
 WP_SHARED_SECRET=""
 
-# Base WordPress admin URL, used only to render the rep's "Finish in Tom
-# Estimator" link after a call ends. No trailing slash.
+# Fallback base WordPress admin URL for the rep's "Finish in Tom Estimator"
+# link. Each call records the admin URL of the WordPress it started from;
+# this is only used for calls that didn't send one. No trailing slash.
 WP_ADMIN_URL="https://tommoving.ca/wp-admin"
