@@ -43,12 +43,13 @@ test("the client finalizes and uploads when the rep sends 'end-call'", async () 
     /msg\.type === "end-call" && msg\.from === "rep"[\s\S]{0,400}?void finalize\(\)/,
   );
   // finalize() still uploads before signalling "bye" (b4120b7): the fetch to
-  // the upload route comes before callRef.current?.close().
+  // the complete route (which assembles the progressively uploaded pieces)
+  // comes before callRef.current?.close().
   const finalize = client.slice(
     client.indexOf("const finalize = useCallback("),
     client.indexOf("const switchCamera = useCallback("),
   );
-  const uploadAt = finalize.indexOf("/upload`");
+  const uploadAt = finalize.indexOf("/complete`");
   const closeAt = finalize.indexOf("callRef.current?.close()");
   assert.ok(uploadAt > -1 && closeAt > -1, "finalize should upload and then close");
   assert.ok(uploadAt < closeAt, "finalize must upload before it closes the transport");

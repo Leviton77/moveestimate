@@ -38,7 +38,9 @@ test("the plugin sends its admin_url() and its cron skips other sites' calls", a
     "wordpress-plugin/tom-moving-estimate/includes/class-tme-live-call.php",
   );
   assert.match(plugin, /'wp_admin_url'\s*=>\s*admin_url\(\)/); // handle_start
-  // sweep() compares the returned wp_admin_url against this site's admin_url()
-  assert.match(plugin, /\$here = untrailingslashit\(admin_url\(\)\)/);
-  assert.match(plugin, /strcasecmp\(\$origin, \$here\) !== 0/);
+  // pending_calls() (used by sweep() and the "Calls waiting to import" list)
+  // compares each call's wp_admin_url against this site's admin_url();
+  // behavior is covered in tests/live-call-harness.php (is_for_this_site).
+  assert.match(plugin, /\$here = admin_url\(\)/);
+  assert.match(plugin, /strcasecmp\(\$origin, untrailingslashit\(\$here\)\) === 0/);
 });

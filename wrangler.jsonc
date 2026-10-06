@@ -1,0 +1,29 @@
+{
+  // The call pages + API, self-hosted in Tom Moving's own Cloudflare account
+  // (moved off the ChatGPT Sites platform so changes can be deployed without
+  // ChatGPT). Build and deploy:  npm run deploy
+  //
+  // Secrets (not in this file) — set once with `npx wrangler secret put <NAME>`:
+  //   WP_SHARED_SECRET   must equal the shared secret in WordPress →
+  //                      Move Estimates → Live Walkthrough settings
+  //   TURN_KEY_ID, TURN_API_TOKEN   Cloudflare Realtime TURN key
+  "name": "moveestimate",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "moveestimate",
+      // Created with `npx wrangler d1 create moveestimate`.
+      "database_id": "cf0fd405-7738-42e5-b50a-a0192739c1b0"
+    }
+  ],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "moveestimate-media" }],
+  "vars": {
+    // The signaling Worker (signaling/), deployed in the same account.
+    "SIGNALING_URL": "wss://moveestimate-signaling.artlinco.workers.dev",
+    "WP_ADMIN_URL": "https://tommoving.ca/wp-admin"
+  }
+}

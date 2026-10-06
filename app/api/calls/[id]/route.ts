@@ -1,4 +1,5 @@
 import { getVideoSession, isSessionId } from "../../../../db/sessions";
+import { ABANDONED_AFTER_MINUTES, assembleRecording } from "../../../../db/recording-parts";
 import { mintCallToken } from "../../../call-token";
 import { callLinkOrigin, isWordPressRequest, wpSharedSecret } from "../../../wp-auth";
 
@@ -24,9 +25,20 @@ export async function GET(
     return Response.json({ error: "Invalid call id." }, { status: 400 });
   }
 
-  const call = await getVideoSession(id);
+  let call = await getVideoSession(id);
   if (!call) {
     return Response.json({ error: "Call not found." }, { status: 404 });
+  }
+
+  // The customer stopped sending pieces without finishing (tab closed
+  // mid-upload): build the recording from what arrived.
+  if (call.status !== "uploaded" && call.last_part_at && call.wp_ingested === 0) {
+    const idleMs = Date.now() - Date.parse(call.last_part_at.replace(" ", "T") + "Z");
+    if (idleMs > ABANDONED_AFTER_MINUTES * 60 * 1000) {
+      const result = await assembleRecording(id);
+      if (!result.ok) console.warn(`[calls] could not assemble ${id}: ${result.error}`);
+      call = (await getVideoSession(id)) ?? call;
+    }
   }
 
   let recording: {
