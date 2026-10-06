@@ -4,7 +4,7 @@ Tags: moving estimate, photos, video, Cloudflare R2
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.0-rc19
+Stable tag: 1.2.0-rc20
 License: Proprietary
 
 Private moving-estimate information, photo and video submissions, with media hosted on Cloudflare R2 and WordPress rep access.
@@ -120,3 +120,6 @@ A representative can start a guided real-time video call with a customer from Mo
 
 = 1.2.0-rc19 =
 * The plugin now updates itself. New versions appear under Dashboard → Updates like any other plugin, and install automatically if you turn on "Enable auto-updates" for Tom Moving Estimate on the Plugins page. The staging site gets new versions first; the live site only gets a version after it has been checked on staging.
+
+= 1.2.0-rc20 =
+* The video review screen has playback speed buttons under the video: 1×, 1.1×, 1.25×, 1.5× and 2×. Voices keep their normal pitch when sped up, and the speed you pick is remembered for the next video you review in the same browser.

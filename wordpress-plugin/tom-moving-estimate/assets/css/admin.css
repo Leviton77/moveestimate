@@ -35,6 +35,7 @@
 .tme-tools { align-items:center; display:flex; flex-wrap:wrap; gap:7px; padding:14px 16px 8px; }
 .tme-tools > strong { color:var(--muted); font-size:11px; letter-spacing:.06em; margin-right:4px; text-transform:uppercase; }
 .tme-tools .button.is-active { background:var(--green); border-color:var(--green); color:#fff; }
+.tme-speed { border-bottom:1px solid var(--line); padding-bottom:12px; }
 .tme-draw-options { align-items:center; display:inline-flex; gap:6px; }
 .tme-color { background:var(--tme-color); border:2px solid #fff; border-radius:50%; box-shadow:0 0 0 1px #aab7af; cursor:pointer; height:22px; padding:0; width:22px; }
 .tme-color.is-active { box-shadow:0 0 0 2px #1d2922; }
