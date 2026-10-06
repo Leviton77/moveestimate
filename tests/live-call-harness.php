@@ -45,6 +45,14 @@ if (!function_exists('mb_substr')) {
     }
 }
 
+final class WP_Error
+{
+    public function __construct(private string $code = '', private string $message = '') {}
+    public function get_error_code(): string { return $this->code; }
+    public function get_error_message(): string { return $this->message; }
+}
+function is_wp_error($v) { return $v instanceof WP_Error; }
+
 final class TME_Secrets
 {
     public static function encrypt(string $s): string { return $s === '' ? '' : 'plain:' . $s; }
@@ -168,6 +176,33 @@ check('is_configured: true with url + secret', TME_Live_Call::is_configured(), t
 
 $sched = call_private('cron_schedule', array(array()));
 check('cron_schedule: adds five-minute entry', $sched['tme_five_minutes']['interval'], 300);
+
+// --- is_for_this_site ---------------------------------------------
+
+$uuid = '1a2b3c4d-1234-4abc-8def-0123456789ab';
+$here = 'https://staging.tommoving.ca/wp-admin/';
+check('is_for_this_site: same admin URL', call_private('is_for_this_site', array(array('call_id' => $uuid, 'wp_admin_url' => 'https://staging.tommoving.ca/wp-admin/'), $here)), true);
+check('is_for_this_site: trailing slash + case ignored', call_private('is_for_this_site', array(array('call_id' => $uuid, 'wp_admin_url' => 'https://STAGING.tommoving.ca/wp-admin'), $here)), true);
+check('is_for_this_site: no recorded URL counts as ours', call_private('is_for_this_site', array(array('call_id' => $uuid, 'wp_admin_url' => ''), $here)), true);
+check('is_for_this_site: other site skipped', call_private('is_for_this_site', array(array('call_id' => $uuid, 'wp_admin_url' => 'https://tommoving.ca/wp-admin/'), $here)), false);
+check('is_for_this_site: bad call id skipped', call_private('is_for_this_site', array(array('call_id' => 'nope'), $here)), false);
+
+// --- remember_import_result ---------------------------------------------
+
+$GLOBALS['__options'] = array();
+call_private('remember_import_result', array($uuid, new WP_Error('tme_r2_put', 'R2 upload failed with HTTP 403.')));
+$errs = get_option('tme_live_import_errors', array());
+check('remember_import_result: failure stored', $errs[$uuid]['message'] ?? null, 'R2 upload failed with HTTP 403.');
+call_private('remember_import_result', array($uuid, new WP_Error('tme_live_busy', 'busy')));
+check('remember_import_result: "busy" keeps the real error', get_option('tme_live_import_errors')[$uuid]['message'] ?? null, 'R2 upload failed with HTTP 403.');
+call_private('remember_import_result', array($uuid, 42));
+check('remember_import_result: success clears it', isset(get_option('tme_live_import_errors')[$uuid]), false);
+for ($i = 0; $i < 60; $i++) {
+    call_private('remember_import_result', array('call-' . $i, new WP_Error('x', 'e' . $i)));
+}
+$errs = get_option('tme_live_import_errors');
+check('remember_import_result: capped at 50', count($errs), 50);
+check('remember_import_result: keeps the newest', array_key_last($errs), 'call-59');
 
 echo "\n" . ($failures === 0 ? "All live-call harness checks passed.\n" : "{$failures} check(s) failed.\n");
 exit($failures === 0 ? 0 : 1);

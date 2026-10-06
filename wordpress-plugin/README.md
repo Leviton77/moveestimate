@@ -319,6 +319,41 @@ Retest: start a call from **staging**, end it, click "Finish in Tom
 Estimator" → lands on **staging** `admin-post.php` and the lead imports
 into staging; the production queue is untouched. Repeat from production.
 
+## 1.2.0-rc18 — "Calls waiting to import" with Import now
+
+Found testing on 2026-10-06: the customer ended the call from their phone,
+the rep's tab closed itself, and the estimate only showed up much later via
+the cron sweep. WP-Cron runs only when someone visits the site, so "every 5
+minutes" can be far longer, and a failed sweep import was only visible in
+the PHP error log.
+
+**`includes/class-tme-live-call.php`:**
+
+- Live Walkthrough page (start screen) gains a **Calls waiting to import**
+  table: every uploaded, not-yet-imported call for this site (same
+  `wp_admin_url` filter as the sweep), with started time, rep, the last
+  failed import attempt if any, and an **Import now** button (the existing
+  `admin-post.php?action=tme_live_import` handler).
+- Under it: when the automatic import last ran, and if it couldn't reach
+  the Sites app, why. If it hasn't run for 15+ minutes, a hint to have the
+  host call `wp-cron.php` every 5 minutes.
+- `sweep()` and `handle_import()` record each call's latest failure in
+  `tme_live_import_errors` (capped at 50, cleared on success; "already
+  being imported" isn't recorded). `sweep()` records its run in
+  `tme_live_last_sweep`. Both options are non-autoloaded.
+- The sweep's site filter moved into `pending_calls()` / `is_for_this_site()`
+  so the table and the sweep agree on which calls are this site's.
+- Call ready screen: the "if the tab closes" line now points at Import now.
+
+| File | Change |
+|------|--------|
+| `tom-moving-estimate.php` | version `1.2.0-rc17` → `1.2.0-rc18` |
+
+Plugin-only; no Sites app change. `php -l` clean; `tests/live-call-harness.php`
+gained 10 checks (`is_for_this_site()`, `remember_import_result()`).
+Retest: end a call, close the rep tab → the call shows under Calls waiting
+to import → Import now → lands on the new estimate, and the row is gone.
+
 ## Checks
 
 - **rc11:** `php -l` clean on every file. `tests/live-call-harness.php` gained
