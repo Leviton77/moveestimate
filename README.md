@@ -61,7 +61,12 @@ A daily cron (`17 7 * * *`, `scheduled()` in `worker/index.ts` →
 `db/cleanup.ts`) deletes this app's copy of a recording
 `CLEANUP_AFTER_IMPORT_DAYS` (3) days after WordPress imported it — WordPress
 keeps its own copy under its own 30-day retention — and anything older than
-`CLEANUP_MAX_AGE_DAYS` (45) regardless. Cleaned calls get `media_deleted_at`
+`CLEANUP_MAX_AGE_DAYS` (45) regardless.
+
+A second cron (`*/5 * * * *`) opens `WP_CRON_URL`
+(`https://tommoving.ca/wp-cron.php`) so the plugin's 5-minute import sweep
+runs on time even when nobody visits the site.
+ Cleaned calls get `media_deleted_at`
 and `video_key = NULL`. Test locally with `CLEANUP_AFTER_IMPORT_DAYS=0` in
 `.dev.vars` and `GET /cdn-cgi/handler/scheduled`. If the customer closes the tab before that, a
 call with no new piece for 5 minutes is assembled from the pieces that arrived
