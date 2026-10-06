@@ -24,6 +24,13 @@
   "vars": {
     // The signaling Worker (signaling/), deployed in the same account.
     "SIGNALING_URL": "wss://moveestimate-signaling.artlinco.workers.dev",
-    "WP_ADMIN_URL": "https://tommoving.ca/wp-admin"
-  }
+    "WP_ADMIN_URL": "https://tommoving.ca/wp-admin",
+    // Storage cleanup (db/cleanup.ts): delete this app's copy of a recording
+    // this many days after WordPress imported it, and anything older than
+    // the max age regardless.
+    "CLEANUP_AFTER_IMPORT_DAYS": "3",
+    "CLEANUP_MAX_AGE_DAYS": "45"
+  },
+  // Daily at 07:17 UTC: storage cleanup.
+  "triggers": { "crons": ["17 7 * * *"] }
 }

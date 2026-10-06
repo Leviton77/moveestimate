@@ -118,6 +118,10 @@ export async function ensureDatabase() {
     // the current recording (video_key = "parts:<n>") is made of.
     "last_part_at TEXT",
     "parts_assembled INTEGER",
+    // Storage cleanup (db/cleanup.ts): when WordPress imported the call, and
+    // when this app deleted its own copy of the recording afterwards.
+    "wp_ingested_at TEXT",
+    "media_deleted_at TEXT",
   ]) {
     try {
       await db.prepare(`ALTER TABLE video_sessions ADD COLUMN ${column}`).run();
@@ -247,6 +251,10 @@ export type VideoSessionRecord = {
   last_part_at: string | null;
   /** How many pieces the recording (video_key = "parts:<n>") is made of. */
   parts_assembled: number | null;
+  /** When WordPress acked the import (null for calls imported before 2026-10-06). */
+  wp_ingested_at: string | null;
+  /** When this app deleted its copy of the recording (db/cleanup.ts). */
+  media_deleted_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -388,7 +396,9 @@ export async function markWpIngested(id: string, wpRequestId: string) {
   await ensureDatabase();
   await database()
     .prepare(`UPDATE video_sessions
-      SET wp_ingested = 1, wp_request_id = ?, updated_at = CURRENT_TIMESTAMP
+      SET wp_ingested = 1, wp_request_id = ?,
+          wp_ingested_at = COALESCE(wp_ingested_at, CURRENT_TIMESTAMP),
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`)
     .bind(wpRequestId || null, id)
     .run();
@@ -459,10 +469,47 @@ export async function listAbandonedPartialCalls(idleMinutes: number) {
   const result = await database()
     .prepare(`SELECT id FROM video_sessions
       WHERE origin = 'wp' AND status != 'uploaded' AND wp_ingested = 0
-        AND last_part_at IS NOT NULL
+        AND last_part_at IS NOT NULL AND media_deleted_at IS NULL
         AND last_part_at < datetime('now', ?)
       ORDER BY last_part_at DESC LIMIT 10`)
     .bind(`-${Math.max(1, Math.floor(idleMinutes))} minutes`)
     .all<{ id: string }>();
   return result.results.map((row) => row.id);
+}
+
+// --- storage cleanup ----------------------------------------------------------
+
+/**
+ * Calls whose recording this app can delete: imported into WordPress more
+ * than `afterImportDays` ago (WordPress keeps its own copy), or created more
+ * than `maxAgeDays` ago whatever happened (abandoned, never imported).
+ */
+export async function listCallsWithExpiredMedia(afterImportDays: number, maxAgeDays: number) {
+  await ensureDatabase();
+  const result = await database()
+    .prepare(`SELECT id, video_key FROM video_sessions v
+      WHERE media_deleted_at IS NULL
+        AND (video_key IS NOT NULL
+             OR EXISTS (SELECT 1 FROM video_parts p WHERE p.session_id = v.id))
+        AND ((wp_ingested = 1
+              AND COALESCE(wp_ingested_at, updated_at) < datetime('now', ?))
+             OR created_at < datetime('now', ?))
+      ORDER BY created_at ASC LIMIT 50`)
+    .bind(`-${afterImportDays} days`, `-${maxAgeDays} days`)
+    .all<{ id: string; video_key: string | null }>();
+  return result.results;
+}
+
+/** Forget a call's recording after its objects were deleted from R2. */
+export async function markMediaDeleted(sessionId: string) {
+  await ensureDatabase();
+  const db = database();
+  await db.batch([
+    db.prepare("DELETE FROM video_parts WHERE session_id = ?").bind(sessionId),
+    db
+      .prepare(`UPDATE video_sessions
+        SET video_key = NULL, media_deleted_at = CURRENT_TIMESTAMP
+        WHERE id = ?`)
+      .bind(sessionId),
+  ]);
 }

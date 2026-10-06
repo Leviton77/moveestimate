@@ -53,7 +53,17 @@ recording as those pieces (`video_key = "parts:<N>"`, no copy);
 `GET /api/calls/:id/recording` streams them back to back as one file (range
 requests supported). No size ceiling besides a 2 GB sanity cap — WordPress's
 "Maximum video size" is the real limit. Recording runs at ~1.5 Mbps video
-(≈11 MB/min, ≈330 MB for 30 min). If the customer closes the tab before that, a
+(≈11 MB/min, ≈330 MB for 30 min).
+
+### Storage cleanup
+
+A daily cron (`17 7 * * *`, `scheduled()` in `worker/index.ts` →
+`db/cleanup.ts`) deletes this app's copy of a recording
+`CLEANUP_AFTER_IMPORT_DAYS` (3) days after WordPress imported it — WordPress
+keeps its own copy under its own 30-day retention — and anything older than
+`CLEANUP_MAX_AGE_DAYS` (45) regardless. Cleaned calls get `media_deleted_at`
+and `video_key = NULL`. Test locally with `CLEANUP_AFTER_IMPORT_DAYS=0` in
+`.dev.vars` and `GET /cdn-cgi/handler/scheduled`. If the customer closes the tab before that, a
 call with no new piece for 5 minutes is assembled from the pieces that arrived
 when WordPress next asks (`GET /api/calls?ingested=0`, `GET /api/calls/:id`).
 See `db/recording-parts.ts`. The old one-shot `/upload` route stays for call

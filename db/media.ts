@@ -11,14 +11,15 @@ type StoredMedia = {
   httpMetadata?: { contentType?: string };
 };
 
-type MediaBucket = {
+export type MediaBucket = {
   put(
     key: string,
     body: ReadableStream,
     options?: { httpMetadata?: { contentType?: string } },
   ): Promise<unknown>;
   get(key: string, options?: { range?: ByteRange }): Promise<StoredMedia | null>;
-  delete(key: string): Promise<void>;
+  /** One key, or up to 1000 in one call. */
+  delete(keys: string | string[]): Promise<void>;
 };
 
 type RuntimeBindings = { MEDIA?: MediaBucket };
