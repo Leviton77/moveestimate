@@ -23,6 +23,11 @@ final class TME_Live_Call
     private const START_TTL     = 604800; // 7 days, in seconds
     private const CRON_HOOK     = 'tme_live_import_sweep';
     private const CRON_SCHEDULE = 'tme_five_minutes';
+    // Last failed import per call id ([message, at]) and the last sweep run
+    // ([at, error]) -- shown on the Live Walkthrough page so a stuck import
+    // isn't only visible in the PHP error log.
+    private const ERRORS_OPTION = 'tme_live_import_errors';
+    private const SWEEP_OPTION  = 'tme_live_last_sweep';
     private const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i';
 
     public static function init(): void
@@ -228,6 +233,7 @@ final class TME_Live_Call
                 <?php self::render_call_ready($call_id, $call); ?>
             <?php elseif (self::is_configured()) : ?>
                 <?php self::render_start_form(); ?>
+                <?php self::render_pending_calls(); ?>
             <?php endif; ?>
 
             <?php if (current_user_can('manage_options')) : ?>
@@ -259,6 +265,95 @@ final class TME_Live_Call
                     <span class="description"><?php esc_html_e('The customer’s whole call screen, contact form and confirmation messages show in this language. This does not change anything on your (the rep’s) screen.', 'tom-moving-estimate'); ?></span></p>
                 <p><button class="button button-primary" type="submit"><?php esc_html_e('Start live walkthrough', 'tom-moving-estimate'); ?></button></p>
             </form>
+        </div>
+        <?php
+    }
+
+    /**
+     * Finished calls the Sites app holds for this site that haven't been
+     * imported yet, each with an "Import now" button -- so a closed rep tab
+     * never means waiting on WP-Cron, which only runs when the site gets a
+     * visit.
+     */
+    private static function render_pending_calls(): void
+    {
+        $calls  = self::pending_calls();
+        $errors = get_option(self::ERRORS_OPTION, array());
+        $errors = is_array($errors) ? $errors : array();
+        $sweep  = get_option(self::SWEEP_OPTION, array());
+        $sweep  = is_array($sweep) ? $sweep : array();
+        $last   = (int) ($sweep['at'] ?? 0);
+        ?>
+        <div class="tme-table-card" style="padding:20px;max-width:960px;margin-top:20px">
+            <h2><?php esc_html_e('Calls waiting to import', 'tom-moving-estimate'); ?></h2>
+            <p class="description"><?php esc_html_e('Finished calls whose recording is uploaded but not yet in Move Estimates. They import automatically; click Import now to skip the wait. A long recording can take a minute.', 'tom-moving-estimate'); ?></p>
+
+            <?php if (is_wp_error($calls)) : ?>
+                <div class="notice notice-error inline"><p><?php echo esc_html(sprintf(
+                    /* translators: %s: error message */
+                    __('Couldn’t check the live walkthrough service: %s', 'tom-moving-estimate'),
+                    $calls->get_error_message()
+                )); ?></p></div>
+            <?php elseif (!$calls) : ?>
+                <p><?php esc_html_e('Nothing waiting — every finished call has been imported.', 'tom-moving-estimate'); ?></p>
+            <?php else : ?>
+                <table class="widefat striped">
+                    <thead><tr>
+                        <th><?php esc_html_e('Started', 'tom-moving-estimate'); ?></th>
+                        <th><?php esc_html_e('Rep', 'tom-moving-estimate'); ?></th>
+                        <th><?php esc_html_e('Last import attempt', 'tom-moving-estimate'); ?></th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ($calls as $entry) :
+                        $call_id = (string) $entry['call_id'];
+                        $ts      = strtotime((string) ($entry['created_at'] ?? ''));
+                        $rep     = trim((string) ($entry['rep_name'] ?? '')) ?: (string) ($entry['rep_email'] ?? '');
+                        $failure = is_array($errors[$call_id] ?? null) ? $errors[$call_id] : null;
+                        $import  = add_query_arg(array(
+                            'action'  => 'tme_live_import',
+                            'call_id' => $call_id,
+                        ), admin_url('admin-post.php'));
+                        ?>
+                        <tr>
+                            <td><?php echo esc_html($ts ? wp_date('F j, Y, g:i a', $ts) : '—'); ?></td>
+                            <td><?php echo esc_html($rep !== '' ? $rep : '—'); ?></td>
+                            <td><?php if ($failure) : ?>
+                                <span style="color:#b32d2e"><?php echo esc_html(sprintf(
+                                    /* translators: 1: error message, 2: how long ago */
+                                    __('Failed: %1$s (%2$s ago)', 'tom-moving-estimate'),
+                                    (string) ($failure['message'] ?? ''),
+                                    human_time_diff((int) ($failure['at'] ?? time()))
+                                )); ?></span>
+                            <?php else : ?>—<?php endif; ?></td>
+                            <td><a class="button button-primary" href="<?php echo esc_url($import); ?>"><?php esc_html_e('Import now', 'tom-moving-estimate'); ?></a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <p class="description" style="margin-top:12px">
+                <?php if ($last) : ?>
+                    <?php echo esc_html(sprintf(
+                        /* translators: %s: how long ago */
+                        __('Automatic import last ran %s ago.', 'tom-moving-estimate'),
+                        human_time_diff($last)
+                    )); ?>
+                    <?php if (!empty($sweep['error'])) : ?>
+                        <span style="color:#b32d2e"><?php echo esc_html(sprintf(
+                            /* translators: %s: error message */
+                            __('It couldn’t reach the live walkthrough service: %s', 'tom-moving-estimate'),
+                            (string) $sweep['error']
+                        )); ?></span>
+                    <?php endif; ?>
+                <?php else : ?>
+                    <?php esc_html_e('Automatic import hasn’t run yet.', 'tom-moving-estimate'); ?>
+                <?php endif; ?>
+                <?php if (!$last || time() - $last > 15 * MINUTE_IN_SECONDS) : ?>
+                    <?php esc_html_e('WordPress only runs scheduled jobs when someone visits the site. For imports within about 5 minutes, ask your host to call wp-cron.php every 5 minutes.', 'tom-moving-estimate'); ?>
+                <?php endif; ?>
+            </p>
         </div>
         <?php
     }
@@ -334,7 +429,7 @@ final class TME_Live_Call
                 <a class="button" target="_blank" rel="noopener" href="<?php echo esc_attr('mailto:' . rawurlencode($email) . '?subject=' . rawurlencode(self::email_subject($locale)) . '&body=' . rawurlencode($sms_body)); ?>"><?php esc_html_e('Email from my mail app', 'tom-moving-estimate'); ?></a>
             </p>
 
-            <p class="description"><?php esc_html_e('When the call ends, click “Finish in Tom Estimator” on the call screen. If you close the tab first, it imports automatically within a few minutes.', 'tom-moving-estimate'); ?></p>
+            <p class="description"><?php esc_html_e('When the call ends, click “Finish in Tom Estimator” on the call screen. If the tab closes first, it imports automatically — or go to Live Walkthrough → Calls waiting to import and click Import now.','tom-moving-estimate'); ?></p>
             <p><a href="<?php echo esc_url(self::page_url()); ?>"><?php esc_html_e('Start another call', 'tom-moving-estimate'); ?></a></p>
         </div>
         <?php
@@ -564,6 +659,7 @@ final class TME_Live_Call
         }
 
         $result = self::import_one($call_id);
+        self::remember_import_result($call_id, $result);
         if (is_wp_error($result)) {
             // Keep ?call= on the bounce-back so the page shows the call's
             // links/status again instead of falling through to a blank
@@ -750,28 +846,83 @@ final class TME_Live_Call
         if (!self::is_configured()) {
             return;
         }
-        $list = self::api('GET', '/api/calls?ingested=0');
-        if (is_wp_error($list) || empty($list['calls']) || !is_array($list['calls'])) {
+        $calls = self::pending_calls();
+        update_option(self::SWEEP_OPTION, array(
+            'at'    => time(),
+            'error' => is_wp_error($calls) ? $calls->get_error_message() : '',
+        ), false);
+        if (is_wp_error($calls)) {
+            error_log('[tme-live] sweep could not list calls: ' . $calls->get_error_message());
             return;
         }
-        $here = untrailingslashit(admin_url());
-        foreach ($list['calls'] as $entry) {
-            $call_id = is_array($entry) ? (string) ($entry['call_id'] ?? '') : '';
-            if (!preg_match(self::UUID_RE, $call_id)) {
-                continue;
-            }
-            // Leave calls that were started from a different WordPress admin
-            // (e.g. production) for that site's own sweep. Calls with no
-            // recorded admin URL (older plugin) still get imported here.
-            $origin = is_array($entry) ? untrailingslashit((string) ($entry['wp_admin_url'] ?? '')) : '';
-            if ($origin !== '' && strcasecmp($origin, $here) !== 0) {
-                continue;
-            }
+        foreach ($calls as $entry) {
+            $call_id = (string) $entry['call_id'];
             $result = self::import_one($call_id);
+            self::remember_import_result($call_id, $result);
             if (is_wp_error($result)) {
                 error_log('[tme-live] import ' . $call_id . ' failed: ' . $result->get_error_message());
             }
         }
+    }
+
+    /**
+     * Uploaded, not-yet-imported calls that belong to this WordPress.
+     *
+     * @return array<int,array>|WP_Error
+     */
+    private static function pending_calls()
+    {
+        $list = self::api('GET', '/api/calls?ingested=0');
+        if (is_wp_error($list)) {
+            return $list;
+        }
+        $entries = isset($list['calls']) && is_array($list['calls']) ? $list['calls'] : array();
+        $here = admin_url();
+        $calls = array();
+        foreach ($entries as $entry) {
+            if (is_array($entry) && self::is_for_this_site($entry, $here)) {
+                $calls[] = $entry;
+            }
+        }
+        return $calls;
+    }
+
+    /**
+     * Leave calls that were started from a different WordPress admin (e.g.
+     * production) for that site's own sweep. Calls with no recorded admin URL
+     * (older plugin) still count as ours.
+     */
+    private static function is_for_this_site(array $entry, string $here): bool
+    {
+        if (!preg_match(self::UUID_RE, (string) ($entry['call_id'] ?? ''))) {
+            return false;
+        }
+        $origin = untrailingslashit((string) ($entry['wp_admin_url'] ?? ''));
+        return $origin === '' || strcasecmp($origin, untrailingslashit($here)) === 0;
+    }
+
+    /**
+     * Keep the latest failure per call for the "Calls waiting to import"
+     * table; a success clears it. "Already being imported" isn't a failure.
+     *
+     * @param int|WP_Error $result
+     */
+    private static function remember_import_result(string $call_id, $result): void
+    {
+        if (is_wp_error($result) && $result->get_error_code() === 'tme_live_busy') {
+            return;
+        }
+        $errors = get_option(self::ERRORS_OPTION, array());
+        $errors = is_array($errors) ? $errors : array();
+        $had = isset($errors[$call_id]);
+        unset($errors[$call_id]);
+        if (is_wp_error($result)) {
+            $errors[$call_id] = array('message' => $result->get_error_message(), 'at' => time());
+            $errors = array_slice($errors, -50, null, true);
+        } elseif (!$had) {
+            return;
+        }
+        update_option(self::ERRORS_OPTION, $errors, false);
     }
 
     private static function ack(string $call_id, int $wp_id): void
