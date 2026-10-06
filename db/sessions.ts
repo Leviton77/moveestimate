@@ -115,7 +115,7 @@ export async function ensureDatabase() {
     // env var when null (calls from an older plugin).
     "wp_admin_url TEXT",
     // Progressive upload: when the last piece arrived, and how many pieces
-    // the current assembled recording (video_key) was built from.
+    // the current recording (video_key = "parts:<n>") is made of.
     "last_part_at TEXT",
     "parts_assembled INTEGER",
   ]) {
@@ -245,7 +245,7 @@ export type VideoSessionRecord = {
   wp_admin_url: string | null;
   /** When the client last uploaded a recording piece (progressive upload). */
   last_part_at: string | null;
-  /** How many pieces the assembled recording in video_key was built from. */
+  /** How many pieces the recording (video_key = "parts:<n>") is made of. */
   parts_assembled: number | null;
   created_at: string;
   updated_at: string;
@@ -439,14 +439,6 @@ export async function listVideoParts(sessionId: string) {
     .bind(sessionId)
     .all<VideoPartRecord>();
   return result.results;
-}
-
-export async function deleteVideoPartRows(sessionId: string) {
-  await ensureDatabase();
-  await database()
-    .prepare("DELETE FROM video_parts WHERE session_id = ?")
-    .bind(sessionId)
-    .run();
 }
 
 export async function setPartsAssembled(sessionId: string, count: number) {

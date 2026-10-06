@@ -48,8 +48,12 @@ first request (`ensureDatabase()`), so a fresh D1 needs no migration.
 
 The client's recording is uploaded in numbered pieces every 10 s during the
 call (`POST /api/video-sessions/:id/parts?seq=N`), then finished with
-`POST /api/video-sessions/:id/complete` (`{ "parts": N }`), which concatenates
-the pieces into one R2 object. If the customer closes the tab before that, a
+`POST /api/video-sessions/:id/complete` (`{ "parts": N }`), which seals the
+recording as those pieces (`video_key = "parts:<N>"`, no copy);
+`GET /api/calls/:id/recording` streams them back to back as one file (range
+requests supported). No size ceiling besides a 2 GB sanity cap — WordPress's
+"Maximum video size" is the real limit. Recording runs at ~1.5 Mbps video
+(≈11 MB/min, ≈330 MB for 30 min). If the customer closes the tab before that, a
 call with no new piece for 5 minutes is assembled from the pieces that arrived
 when WordPress next asks (`GET /api/calls?ingested=0`, `GET /api/calls/:id`).
 See `db/recording-parts.ts`. The old one-shot `/upload` route stays for call
