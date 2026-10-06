@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { cleanupOldRecordings } from "../db/cleanup";
 
 interface Env {
   ASSETS: Fetcher;
@@ -41,6 +42,12 @@ const worker = {
     }
 
     return handler.fetch(request, env, ctx);
+  },
+
+  // Daily cron (wrangler.jsonc → triggers): delete recordings WordPress has
+  // already imported, so this app's storage doesn't grow forever.
+  async scheduled(_controller: unknown, _env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(cleanupOldRecordings().then(() => undefined));
   },
 };
 
