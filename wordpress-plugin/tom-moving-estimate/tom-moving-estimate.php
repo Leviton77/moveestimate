@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tom Moving Estimate
  * Description: Private moving-estimate information, photo and video submissions using WordPress and Cloudflare R2.
- * Version: 1.2.0-rc18
+ * Version: 1.2.0-rc19
  * Author: Tom Moving
  * Requires at least: 6.5
  * Requires PHP: 8.1
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('TME_VERSION', '1.2.0-rc18');
+define('TME_VERSION', '1.2.0-rc19');
 define('TME_FILE', __FILE__);
 define('TME_DIR', plugin_dir_path(__FILE__));
 define('TME_URL', plugin_dir_url(__FILE__));
@@ -32,6 +32,7 @@ require_once TME_DIR . 'includes/class-tme-retention.php';
 require_once TME_DIR . 'includes/class-tme-live-call.php';
 require_once TME_DIR . 'includes/class-tme-public.php';
 require_once TME_DIR . 'includes/class-tme-admin.php';
+require_once TME_DIR . 'includes/class-tme-updater.php';
 
 final class TME_Plugin
 {
@@ -43,6 +44,7 @@ final class TME_Plugin
         TME_Public::init();
         TME_Retention::init();
         TME_Live_Call::init();
+        TME_Updater::init();
 
         if (is_admin()) {
             TME_Admin::init();

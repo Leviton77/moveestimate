@@ -4,7 +4,7 @@ Tags: moving estimate, photos, video, Cloudflare R2
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.0-rc18
+Stable tag: 1.2.0-rc19
 License: Proprietary
 
 Private moving-estimate information, photo and video submissions, with media hosted on Cloudflare R2 and WordPress rep access.
@@ -117,3 +117,6 @@ A representative can start a guided real-time video call with a customer from Mo
 = 1.2.0-rc18 =
 * The Live Walkthrough page now lists "Calls waiting to import": finished calls whose recording is uploaded but not yet in Move Estimates, each with an "Import now" button. If the call tab closed before you clicked "Finish in Tom Estimator", you no longer have to wait for the automatic import.
 * If an import fails, the reason now shows next to that call, along with when the automatic import last ran. Previously failures were only written to the server's error log.
+
+= 1.2.0-rc19 =
+* The plugin now updates itself. New versions appear under Dashboard → Updates like any other plugin, and install automatically if you turn on "Enable auto-updates" for Tom Moving Estimate on the Plugins page. The staging site gets new versions first; the live site only gets a version after it has been checked on staging.

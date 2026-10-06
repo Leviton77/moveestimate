@@ -1,9 +1,9 @@
 # Tom Moving Estimate — live-call integration
 
 The WordPress plugin ("Tom Moving Estimate") is deployed separately to
-tommoving.ca; it is not built from this repo. This folder tracks the plugin-side
-changes for the **live walkthrough** integration so they can be reviewed
-alongside the Sites-app changes (`app/api/calls/*`, `app/call-token.ts`).
+tommoving.ca. Since rc19, `tom-moving-estimate/` here is the **complete
+plugin** and releases are built from it (see *Releasing* below); before that
+this folder only mirrored the live-walkthrough files for review.
 
 The rep starts a live call from WordPress; the call runs on the Sites app; when
 it ends the recording and captured contact details are pulled back into
@@ -353,6 +353,48 @@ Plugin-only; no Sites app change. `php -l` clean; `tests/live-call-harness.php`
 gained 10 checks (`is_for_this_site()`, `remember_import_result()`).
 Retest: end a call, close the rep tab → the call shows under Calls waiting
 to import → Import now → lands on the new estimate, and the row is gone.
+
+## 1.2.0-rc19 — the plugin updates itself
+
+**New file** `includes/class-tme-updater.php` (`TME_Updater`), loaded from
+`tom-moving-estimate.php`:
+
+- Reads `wordpress-plugin/update.json` from this repo's `main` branch (raw
+  GitHub, cached 6 h; 1 h after a failed fetch; "Check again" on Dashboard →
+  Updates clears it) and feeds the build into WordPress's normal
+  plugin-update check, so it shows as "Update available" and installs itself
+  when auto-updates are on for the plugin.
+- Two channels: **staging** (`TME_Plugin::is_staging()`, the
+  `myftpupload.com` host) follows `testing`, falling back to `stable` if
+  that's newer; **production** follows `stable` only.
+- Only accepts packages under
+  `github.com/Leviton77/moveestimate/releases/download/`.
+- Lists the plugin under `no_update` when current, which is what makes
+  WordPress show the "Enable auto-updates" toggle.
+- `upgrader_source_selection`: installs over the existing folder even if a
+  manual upload landed it under another name (e.g. `tom-moving-estimate-1`).
+
+Also: the rest of the plugin (assets, `class-tme-public.php`, `-r2`,
+`-retention`, `-secrets`, `-ai-*`, `uninstall.php`, main file, `readme.txt`)
+is now tracked here, byte-identical to rc18 apart from line endings.
+`tests/updater-harness.php` — 18 checks (channel selection, package/version
+validation, update injection, the shipped `update.json` parses).
+
+rc19 has to be installed by hand once on each site; after that, turn on
+**Enable auto-updates** for Tom Moving Estimate on the Plugins page.
+
+## Releasing (rc19 onward)
+
+1. Bump `Version:` + `TME_VERSION` in `tom-moving-estimate.php`, `Stable tag`
+   in `readme.txt`, and add a `= <version> =` changelog entry. Merge to main.
+2. `$env:TME_PHP = '<path to php.exe>'; ./scripts/release-plugin.ps1` —
+   lints, builds `dist/tom-moving-estimate-<version>.zip`, publishes GitHub
+   pre-release `plugin-v<version>`, points `update.json` → `testing` at it.
+   Commit + push `update.json` to main. **Staging** updates.
+3. After it checks out on staging: `./scripts/release-plugin.ps1 -Promote`,
+   commit + push `update.json`. **Production** updates.
+
+`-BuildOnly` builds the zip without publishing anything.
 
 ## Checks
 
