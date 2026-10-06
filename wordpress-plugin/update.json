@@ -1,12 +1,12 @@
 {
     "stable":  {
-                   "version":  "1.2.0-rc19",
-                   "package":  "https://github.com/Leviton77/moveestimate/releases/download/plugin-v1.2.0-rc19/tom-moving-estimate-1.2.0-rc19.zip",
-                   "notes":  "* The plugin now updates itself. New versions appear under Dashboard → Updates like any other plugin, and install automatically if you turn on \"Enable auto-updates\" for Tom Moving Estimate on the Plugins page. The staging site gets new versions first; the live site only gets a version after it has been checked on staging."
+                   "version":  "1.2.0-rc20",
+                   "package":  "https://github.com/Leviton77/moveestimate/releases/download/plugin-v1.2.0-rc20/tom-moving-estimate-1.2.0-rc20.zip",
+                   "notes":  "* The video review screen has playback speed buttons under the video: 1×, 1.1×, 1.25×, 1.5× and 2×. Voices keep their normal pitch when sped up, and the speed you pick is remembered for the next video you review in the same browser."
                },
     "testing":  {
-                    "version":  "1.2.0-rc19",
-                    "package":  "https://github.com/Leviton77/moveestimate/releases/download/plugin-v1.2.0-rc19/tom-moving-estimate-1.2.0-rc19.zip",
-                    "notes":  "* The plugin now updates itself. New versions appear under Dashboard → Updates like any other plugin, and install automatically if you turn on \"Enable auto-updates\" for Tom Moving Estimate on the Plugins page. The staging site gets new versions first; the live site only gets a version after it has been checked on staging."
+                    "version":  "1.2.0-rc20",
+                    "package":  "https://github.com/Leviton77/moveestimate/releases/download/plugin-v1.2.0-rc20/tom-moving-estimate-1.2.0-rc20.zip",
+                    "notes":  "* The video review screen has playback speed buttons under the video: 1×, 1.1×, 1.25×, 1.5× and 2×. Voices keep their normal pitch when sped up, and the speed you pick is remembered for the next video you review in the same browser."
                 }
 }
