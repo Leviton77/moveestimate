@@ -1,0 +1,12 @@
+{
+  "stable": {
+    "version": "1.2.0-rc19",
+    "package": "https://github.com/Leviton77/moveestimate/releases/download/plugin-v1.2.0-rc19/tom-moving-estimate-1.2.0-rc19.zip",
+    "notes": "The plugin now updates itself from GitHub. Staging gets new versions first; the live site gets them after they've been checked on staging."
+  },
+  "testing": {
+    "version": "1.2.0-rc19",
+    "package": "https://github.com/Leviton77/moveestimate/releases/download/plugin-v1.2.0-rc19/tom-moving-estimate-1.2.0-rc19.zip",
+    "notes": "The plugin now updates itself from GitHub. Staging gets new versions first; the live site gets them after they've been checked on staging."
+  }
+}

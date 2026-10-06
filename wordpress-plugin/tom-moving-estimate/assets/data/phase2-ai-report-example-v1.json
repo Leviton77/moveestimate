@@ -1,0 +1,641 @@
+{
+  "schema_version": "1.0",
+  "analysis": {
+    "analysis_id": "synthetic-example",
+    "session_id": 0,
+    "status": "needs_review",
+    "generated_at": "2026-07-25T16:00:00Z",
+    "source_type": "video",
+    "source_duration_seconds": 420,
+    "coverage_percent": 92,
+    "model": "to-be-selected",
+    "warnings": [
+      "Synthetic example only. No customer media was analyzed."
+    ]
+  },
+  "summary": {
+    "rooms_observed": 5,
+    "moving_furniture_pieces": 3,
+    "not_moving_furniture_pieces": 1,
+    "uncertain_furniture_pieces": 1,
+    "box_equivalents": {
+      "low": 31,
+      "likely": 39,
+      "high": 48
+    },
+    "special_handling_items": 7,
+    "disassembly": {
+      "likely": 3,
+      "may_be_needed": 1,
+      "required": 0
+    },
+    "mattress_bags_total": 2,
+    "mattress_bag_sizes": {
+      "queen": 2
+    },
+    "access_complexity": "medium",
+    "home_distribution": "slower",
+    "unresolved_questions": 4
+  },
+  "rooms": [
+    {
+      "id": "room_living",
+      "name": "Living room",
+      "floor": "main",
+      "area_sqft": {
+        "low": 180,
+        "high": 240,
+        "confidence": 0.62
+      },
+      "inventory": [
+        {
+          "id": "item_sectional",
+          "name": "Sectional sofa",
+          "category": "seating",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": false,
+          "box_equivalents": {
+            "low": 0,
+            "likely": 0,
+            "high": 0
+          },
+          "handling_tags": [
+            "bulky"
+          ],
+          "confidence": 0.94,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 64,
+              "end_seconds": 79,
+              "note": "Customer identifies the sectional as moving."
+            }
+          ],
+          "notes": "Confirm whether the two sections separate without tools."
+        },
+        {
+          "id": "item_bookcase",
+          "name": "Tall bookcase",
+          "category": "storage",
+          "quantity": 1,
+          "move_status": "not_moving",
+          "boxable": false,
+          "box_equivalents": {
+            "low": 0,
+            "likely": 0,
+            "high": 0
+          },
+          "handling_tags": [],
+          "confidence": 0.91,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 92,
+              "end_seconds": 98,
+              "note": "Customer states that the bookcase stays."
+            }
+          ],
+          "notes": "Books are estimated separately as boxes."
+        },
+        {
+          "id": "item_living_contents",
+          "name": "Books and decorative contents",
+          "category": "boxable_contents",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": true,
+          "box_equivalents": {
+            "low": 6,
+            "likely": 8,
+            "high": 10
+          },
+          "handling_tags": [
+            "dense"
+          ],
+          "confidence": 0.68,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 82,
+              "end_seconds": 105,
+              "note": "Shelves and media console contents are partially visible."
+            }
+          ],
+          "notes": "Box count depends on unseen cabinet contents."
+        }
+      ]
+    },
+    {
+      "id": "room_kitchen",
+      "name": "Kitchen",
+      "floor": "main",
+      "area_sqft": {
+        "low": 120,
+        "high": 180,
+        "confidence": 0.58
+      },
+      "inventory": [
+        {
+          "id": "item_kitchen_table",
+          "name": "Dining table",
+          "category": "table",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": false,
+          "box_equivalents": {
+            "low": 0,
+            "likely": 0,
+            "high": 0
+          },
+          "handling_tags": [],
+          "confidence": 0.9,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 142,
+              "end_seconds": 154,
+              "note": "Table and removable legs are shown."
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "item_kitchen_contents",
+          "name": "Kitchen cabinet and pantry contents",
+          "category": "boxable_contents",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": true,
+          "box_equivalents": {
+            "low": 10,
+            "likely": 13,
+            "high": 17
+          },
+          "handling_tags": [
+            "fragile"
+          ],
+          "confidence": 0.57,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 155,
+              "end_seconds": 188,
+              "note": "Some cupboards are opened; others are not shown."
+            }
+          ],
+          "notes": "Use a range because several cabinets are closed."
+        }
+      ]
+    },
+    {
+      "id": "room_bedroom_1",
+      "name": "Bedroom 1",
+      "floor": "second",
+      "area_sqft": {
+        "low": 130,
+        "high": 180,
+        "confidence": 0.7
+      },
+      "inventory": [
+        {
+          "id": "item_queen_bed",
+          "name": "Queen bed, mattress, box spring and frame",
+          "category": "bed",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": false,
+          "box_equivalents": {
+            "low": 0,
+            "likely": 0,
+            "high": 0
+          },
+          "handling_tags": [
+            "bulky"
+          ],
+          "confidence": 0.97,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 225,
+              "end_seconds": 242,
+              "note": "Queen mattress, box spring and frame are fully shown."
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "item_bedroom_contents",
+          "name": "Clothing, linens and personal contents",
+          "category": "boxable_contents",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": true,
+          "box_equivalents": {
+            "low": 8,
+            "likely": 10,
+            "high": 12
+          },
+          "handling_tags": [],
+          "confidence": 0.66,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 242,
+              "end_seconds": 270,
+              "note": "Closet and dresser contents are partly shown."
+            }
+          ],
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "room_basement",
+      "name": "Basement",
+      "floor": "basement",
+      "area_sqft": {
+        "low": 350,
+        "high": 500,
+        "confidence": 0.49
+      },
+      "inventory": [
+        {
+          "id": "item_freezer",
+          "name": "Upright freezer",
+          "category": "appliance",
+          "quantity": 1,
+          "move_status": "uncertain",
+          "boxable": false,
+          "box_equivalents": {
+            "low": 0,
+            "likely": 0,
+            "high": 0
+          },
+          "handling_tags": [
+            "heavy",
+            "appliance",
+            "stairs"
+          ],
+          "confidence": 0.52,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 312,
+              "end_seconds": 320,
+              "note": "Freezer is visible but the customer does not state whether it moves."
+            }
+          ],
+          "notes": "Do not include in moving totals until confirmed."
+        },
+        {
+          "id": "item_treadmill",
+          "name": "Folding treadmill",
+          "category": "fitness_equipment",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": false,
+          "box_equivalents": {
+            "low": 0,
+            "likely": 0,
+            "high": 0
+          },
+          "handling_tags": [
+            "heavy",
+            "bulky",
+            "stairs"
+          ],
+          "confidence": 0.88,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 321,
+              "end_seconds": 342,
+              "note": "Treadmill is moving from the basement through a stairway with a tight turn."
+            }
+          ],
+          "notes": "Confirm the model and whether the console or folding deck can be separated."
+        }
+      ]
+    },
+    {
+      "id": "room_garage",
+      "name": "Garage",
+      "floor": "ground",
+      "area_sqft": {
+        "low": 220,
+        "high": 300,
+        "confidence": 0.6
+      },
+      "inventory": [
+        {
+          "id": "item_garage_contents",
+          "name": "Tools and garage contents",
+          "category": "boxable_contents",
+          "quantity": 1,
+          "move_status": "moving",
+          "boxable": true,
+          "box_equivalents": {
+            "low": 7,
+            "likely": 8,
+            "high": 9
+          },
+          "handling_tags": [
+            "dense",
+            "irregular"
+          ],
+          "confidence": 0.61,
+          "evidence": [
+            {
+              "type": "video_timestamp",
+              "start_seconds": 348,
+              "end_seconds": 382,
+              "note": "Open shelving and several floor items are shown."
+            }
+          ],
+          "notes": "Hazardous or non-transportable materials require manual review."
+        }
+      ]
+    }
+  ],
+  "box_estimate": {
+    "unit": "medium_box_equivalent_3_cubic_feet",
+    "total": {
+      "low": 31,
+      "likely": 39,
+      "high": 48
+    },
+    "suggested_mix": {
+      "small": 10,
+      "medium": 20,
+      "large": 6,
+      "wardrobe": 3,
+      "dish": 4
+    },
+    "assumptions": [
+      "Closed cabinets are estimated using visible room density.",
+      "Furniture is excluded from box totals.",
+      "The uncertain freezer is excluded from the approved moving total."
+    ]
+  },
+  "disassembly_plan": {
+    "totals": {
+      "likely": 3,
+      "may_be_needed": 1,
+      "required": 0
+    },
+    "items": [
+      {
+        "item_id": "item_sectional",
+        "room_id": "room_living",
+        "item": "Sectional sofa",
+        "quantity": 1,
+        "likelihood": "may_be_needed",
+        "expected_work": "Separate the sectional pieces and remove legs if the entrance turn requires it.",
+        "reassembly_at_destination": "likely",
+        "basis": [
+          "bulky_item",
+          "origin_door_width_uncertain",
+          "narrow_entrance_turn"
+        ],
+        "confidence": 0.72,
+        "evidence_seconds": [
+          64,
+          79
+        ]
+      },
+      {
+        "item_id": "item_kitchen_table",
+        "room_id": "room_kitchen",
+        "item": "Dining table",
+        "quantity": 1,
+        "likelihood": "likely",
+        "expected_work": "Remove the table legs for carrying and reinstall them at the destination.",
+        "reassembly_at_destination": "yes",
+        "basis": [
+          "common_moving_practice",
+          "removable_legs_visible"
+        ],
+        "confidence": 0.9,
+        "evidence_seconds": [
+          142,
+          154
+        ]
+      },
+      {
+        "item_id": "item_queen_bed",
+        "room_id": "room_bedroom_1",
+        "item": "Queen bed frame",
+        "quantity": 1,
+        "likelihood": "likely",
+        "expected_work": "Dismantle the frame into carryable sections and reassemble it at the destination.",
+        "reassembly_at_destination": "yes",
+        "basis": [
+          "common_moving_practice",
+          "second_floor_route",
+          "queen_frame_size"
+        ],
+        "confidence": 0.95,
+        "evidence_seconds": [
+          225,
+          242
+        ]
+      },
+      {
+        "item_id": "item_treadmill",
+        "room_id": "room_basement",
+        "item": "Folding treadmill",
+        "quantity": 1,
+        "likelihood": "likely",
+        "expected_work": "Partially disassemble the console or folding deck as permitted by the model.",
+        "reassembly_at_destination": "yes",
+        "basis": [
+          "heavy_bulky_equipment",
+          "basement_stairs",
+          "tight_corridor_turn"
+        ],
+        "confidence": 0.81,
+        "evidence_seconds": [
+          321,
+          342
+        ]
+      }
+    ]
+  },
+  "mattress_bags": {
+    "total_bags": 2,
+    "by_size": [
+      {
+        "size": "queen",
+        "mattress_bags": 1,
+        "foundation_or_box_spring_bags": 1,
+        "total_bags": 2,
+        "room_ids": [
+          "room_bedroom_1"
+        ],
+        "item_ids": [
+          "item_queen_bed"
+        ],
+        "confidence": 0.94,
+        "evidence": [
+          {
+            "type": "video_timestamp",
+            "start_seconds": 225,
+            "end_seconds": 242,
+            "note": "One queen mattress and one queen box spring are shown."
+          }
+        ]
+      }
+    ],
+    "unconfirmed": []
+  },
+  "access": {
+    "origin": {
+      "observed": true,
+      "truck_position": "Curb beside front walkway",
+      "parking_restrictions": "No restriction shown; confirmation required",
+      "outdoor_carry_distance_meters": {
+        "low": 18,
+        "likely": 24,
+        "high": 32
+      },
+      "surface": [
+        "paved_walkway",
+        "three_exterior_steps"
+      ],
+      "entrance": {
+        "type": "front_door",
+        "threshold_concern": false,
+        "door_width_concern": "uncertain"
+      },
+      "corridors": {
+        "complexity": "medium",
+        "notes": "One narrow turn is visible near the entrance."
+      },
+      "elevator": {
+        "present": false,
+        "reservation_required": false
+      },
+      "stairs": {
+        "exterior_steps": 3,
+        "interior_flights": 2,
+        "basement_flights": 1
+      },
+      "carry_complexity": "medium",
+      "confidence": 0.72,
+      "evidence": [
+        {
+          "type": "video_timestamp",
+          "start_seconds": 0,
+          "end_seconds": 52,
+          "note": "Parking approach and route to front entrance."
+        }
+      ]
+    },
+    "destination": {
+      "observed": false,
+      "truck_position": "unknown",
+      "parking_restrictions": "unknown",
+      "outdoor_carry_distance_meters": {
+        "low": null,
+        "likely": null,
+        "high": null
+      },
+      "surface": [],
+      "entrance": {
+        "type": "unknown",
+        "threshold_concern": "unknown",
+        "door_width_concern": "unknown"
+      },
+      "corridors": {
+        "complexity": "unknown",
+        "notes": ""
+      },
+      "elevator": {
+        "present": "unknown",
+        "reservation_required": "unknown"
+      },
+      "stairs": {
+        "exterior_steps": null,
+        "interior_flights": null,
+        "basement_flights": null
+      },
+      "carry_complexity": "unknown",
+      "confidence": 0,
+      "evidence": []
+    }
+  },
+  "home_layout": {
+    "estimated_total_area_sqft": {
+      "low": 1450,
+      "likely": 1750,
+      "high": 2100
+    },
+    "levels_with_moving_items": [
+      "basement",
+      "main",
+      "second",
+      "garage"
+    ],
+    "distribution_type": "distributed_household",
+    "item_density": "medium",
+    "carrying_speed_factor": "slower",
+    "confidence": 0.59,
+    "notes": "Items are distributed across three interior levels and the garage."
+  },
+  "questions": [
+    {
+      "id": "question_freezer",
+      "priority": "high",
+      "status": "open",
+      "question": "Is the upright basement freezer moving?",
+      "related_item_ids": [
+        "item_freezer"
+      ],
+      "evidence_seconds": [
+        312
+      ]
+    },
+    {
+      "id": "question_destination",
+      "priority": "high",
+      "status": "open",
+      "question": "What are the parking, stairs and elevator conditions at the destination?",
+      "related_item_ids": [],
+      "evidence_seconds": []
+    },
+    {
+      "id": "question_cabinets",
+      "priority": "medium",
+      "status": "open",
+      "question": "Are all closed kitchen and garage cabinet contents included?",
+      "related_item_ids": [
+        "item_kitchen_contents",
+        "item_garage_contents"
+      ],
+      "evidence_seconds": [
+        155,
+        348
+      ]
+    },
+    {
+      "id": "question_treadmill",
+      "priority": "high",
+      "status": "open",
+      "question": "What is the treadmill model, and can its console or folding deck be separated for the basement route?",
+      "related_item_ids": [
+        "item_treadmill"
+      ],
+      "evidence_seconds": [
+        321
+      ]
+    }
+  ],
+  "review": {
+    "status": "pending",
+    "reviewed_by_user_id": null,
+    "reviewed_at": null,
+    "approval_notes": "",
+    "changes": []
+  }
+}
