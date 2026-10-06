@@ -398,7 +398,15 @@ export function VideoCallInterface({
         ]);
         const mimeType = supportedMimeType();
         mimeTypeRef.current = mimeType;
-        const recorder = new MediaRecorder(recStream, mimeType ? { mimeType } : undefined);
+        // ~1.5 Mbps video keeps a 30-minute walkthrough around 330 MB (vs
+        // ~18 MB/min at browser defaults) — plenty for a room walkthrough and
+        // lighter on the customer's data while pieces upload during the call.
+        // Browsers that can't honor a bitrate just ignore it.
+        const recorder = new MediaRecorder(recStream, {
+          ...(mimeType ? { mimeType } : {}),
+          videoBitsPerSecond: 1_500_000,
+          audioBitsPerSecond: 96_000,
+        });
         mediaRecorderRef.current = recorder;
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) {

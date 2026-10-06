@@ -1,5 +1,10 @@
 import { env } from "cloudflare:workers";
-import { getVideoSession, isSessionId } from "../../../../../db/sessions";
+import { getVideoSession, isSessionId, listVideoParts } from "../../../../../db/sessions";
+import {
+  contiguousParts,
+  partsCountFromKey,
+  streamRecordingParts,
+} from "../../../../../db/recording-parts";
 import { mediaBucket } from "../../../../../db/media";
 import { verifyCallToken } from "../../../../call-token";
 
@@ -62,6 +67,35 @@ export async function GET(
     });
   }
 
+  const headers: Record<string, string> = {
+    "content-type": contentType,
+    "accept-ranges": "bytes",
+    "cache-control": "private, no-store",
+  };
+
+  // Progressive-upload recordings are stored as pieces; stream them back to
+  // back as one file (see db/recording-parts.ts).
+  const partsCount = partsCountFromKey(call.video_key);
+  if (partsCount !== null) {
+    const parts = contiguousParts(await listVideoParts(id)).slice(0, partsCount);
+    if (parts.length < partsCount || total <= 0) {
+      return new Response("Recording not found", { status: 404 });
+    }
+    const start = range ? range.start : 0;
+    const end = range ? range.end : total - 1;
+    const body = streamRecordingParts(parts, start, end);
+    return range
+      ? new Response(body, {
+          status: 206,
+          headers: {
+            ...headers,
+            "content-length": String(end - start + 1),
+            "content-range": `bytes ${start}-${end}/${total}`,
+          },
+        })
+      : new Response(body, { headers: { ...headers, "content-length": String(total) } });
+  }
+
   const bucket = mediaBucket();
   const object = range
     ? await bucket.get(call.video_key, {
@@ -69,12 +103,6 @@ export async function GET(
       })
     : await bucket.get(call.video_key);
   if (!object) return new Response("Recording not found", { status: 404 });
-
-  const headers: Record<string, string> = {
-    "content-type": contentType,
-    "accept-ranges": "bytes",
-    "cache-control": "private, no-store",
-  };
 
   if (range) {
     const length = range.end - range.start + 1;

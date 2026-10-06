@@ -3,8 +3,8 @@ import { assembleRecording } from "../../../../../db/recording-parts";
 
 /**
  * The client finished uploading: `POST /api/video-sessions/:id/complete` with
- * `{ "parts": N }` — the number of pieces it sent (seq 0..N-1). Builds the
- * recording from them and marks the call uploaded for WordPress. Fails with
+ * `{ "parts": N }` — the number of pieces it sent (seq 0..N-1). Seals the
+ * recording as those pieces and marks the call uploaded for WordPress. Fails with
  * 409 if a piece is missing, so the client can resend it and try again.
  */
 export async function POST(
@@ -21,7 +21,7 @@ export async function POST(
     return Response.json({ error: "Nothing was recorded." }, { status: 400 });
   }
 
-  const result = await assembleRecording(id, { expectedCount: parts, deleteParts: true });
+  const result = await assembleRecording(id, { expectedCount: parts });
   if (!result.ok) {
     const status = result.error.startsWith("Missing") ? 409 : 500;
     return Response.json({ error: result.error }, { status });
