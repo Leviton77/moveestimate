@@ -46,6 +46,7 @@ type Messages = {
   endAndSend: string;
   recordingIndicator: string;
   sendingWalkthrough: string;
+  keepPageOpen: string;
   dragToPoint: string;
   doneTitle: string;
   doneBody: (repEmail: string) => string;
@@ -96,6 +97,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     endAndSend: "End & send",
     recordingIndicator: "🔴 Recording",
     sendingWalkthrough: "📤 Sending your walkthrough…",
+    keepPageOpen: "Please keep this page open until it says it’s done.",
     dragToPoint: "Drag on the video to point. This call is recorded for your estimate.",
     doneTitle: "Thanks — your walkthrough is in.",
     doneBody: (repEmail) =>
@@ -148,6 +150,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     endAndSend: "Terminer et envoyer",
     recordingIndicator: "🔴 Enregistrement",
     sendingWalkthrough: "📤 Envoi de votre visite…",
+    keepPageOpen: "Veuillez garder cette page ouverte jusqu’à la confirmation.",
     dragToPoint: "Glissez sur la vidéo pour pointer. Cet appel est enregistré pour votre estimation.",
     doneTitle: "Merci — votre visite a été envoyée.",
     doneBody: (repEmail) =>

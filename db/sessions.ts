@@ -76,6 +76,17 @@ export async function ensureDatabase() {
     db.prepare(
       "CREATE INDEX IF NOT EXISTS video_sessions_estimate_idx ON video_sessions (estimate_session_id)",
     ),
+    // Pieces of a recording uploaded while the call is still running (see
+    // db/recording-parts.ts), so a closed tab loses seconds, not the call.
+    db.prepare(`CREATE TABLE IF NOT EXISTS video_parts (
+      session_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      content_type TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (session_id, seq)
+    )`),
   ]);
 
   // Contact columns were added after video_sessions shipped; existing tables
@@ -103,6 +114,10 @@ export async function ensureDatabase() {
     // one WordPress (staging vs production). Falls back to the WP_ADMIN_URL
     // env var when null (calls from an older plugin).
     "wp_admin_url TEXT",
+    // Progressive upload: when the last piece arrived, and how many pieces
+    // the current assembled recording (video_key) was built from.
+    "last_part_at TEXT",
+    "parts_assembled INTEGER",
   ]) {
     try {
       await db.prepare(`ALTER TABLE video_sessions ADD COLUMN ${column}`).run();
@@ -228,6 +243,10 @@ export type VideoSessionRecord = {
   wp_ingested: number;
   /** WordPress admin base URL the call was started from; null for older calls. */
   wp_admin_url: string | null;
+  /** When the client last uploaded a recording piece (progressive upload). */
+  last_part_at: string | null;
+  /** How many pieces the assembled recording in video_key was built from. */
+  parts_assembled: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -384,4 +403,74 @@ export async function listWpCallsAwaitingIngest() {
       ORDER BY created_at DESC LIMIT 100`)
     .all<VideoSessionRecord>();
   return result.results;
+}
+
+// --- progressive recording upload -------------------------------------------
+
+export type VideoPartRecord = {
+  session_id: string;
+  seq: number;
+  key: string;
+  size: number;
+  content_type: string;
+};
+
+/** Record one uploaded piece. Re-sending the same seq replaces it. */
+export async function saveVideoPart(part: VideoPartRecord) {
+  await ensureDatabase();
+  const db = database();
+  await db.batch([
+    db
+      .prepare(`INSERT OR REPLACE INTO video_parts (session_id, seq, key, size, content_type)
+        VALUES (?, ?, ?, ?, ?)`)
+      .bind(part.session_id, part.seq, part.key, part.size, part.content_type),
+    db
+      .prepare(`UPDATE video_sessions
+        SET last_part_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`)
+      .bind(part.session_id),
+  ]);
+}
+
+export async function listVideoParts(sessionId: string) {
+  await ensureDatabase();
+  const result = await database()
+    .prepare("SELECT * FROM video_parts WHERE session_id = ? ORDER BY seq ASC")
+    .bind(sessionId)
+    .all<VideoPartRecord>();
+  return result.results;
+}
+
+export async function deleteVideoPartRows(sessionId: string) {
+  await ensureDatabase();
+  await database()
+    .prepare("DELETE FROM video_parts WHERE session_id = ?")
+    .bind(sessionId)
+    .run();
+}
+
+export async function setPartsAssembled(sessionId: string, count: number) {
+  await ensureDatabase();
+  await database()
+    .prepare("UPDATE video_sessions SET parts_assembled = ? WHERE id = ?")
+    .bind(count, sessionId)
+    .run();
+}
+
+/**
+ * WordPress calls whose client stopped sending pieces a while ago without
+ * finishing — typically the customer closed the tab mid-upload. They get
+ * assembled from what arrived.
+ */
+export async function listAbandonedPartialCalls(idleMinutes: number) {
+  await ensureDatabase();
+  const result = await database()
+    .prepare(`SELECT id FROM video_sessions
+      WHERE origin = 'wp' AND status != 'uploaded' AND wp_ingested = 0
+        AND last_part_at IS NOT NULL
+        AND last_part_at < datetime('now', ?)
+      ORDER BY last_part_at DESC LIMIT 10`)
+    .bind(`-${Math.max(1, Math.floor(idleMinutes))} minutes`)
+    .all<{ id: string }>();
+  return result.results.map((row) => row.id);
 }

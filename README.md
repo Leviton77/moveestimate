@@ -26,6 +26,35 @@ This starter does not use `wrangler.jsonc`.
 - `db/sessions.ts` and `db/media.ts` are the D1 and R2 access layers; the
   `sessions` and `video_sessions` tables are created on first use
 
+## Hosting and deploy
+
+Since 2026-10-06 the app is **self-hosted in Tom Moving's own Cloudflare
+account** (moved off the ChatGPT Sites platform so changes can ship without
+ChatGPT): `https://moveestimate.artlinco.workers.dev`, with the signaling
+Worker at `https://moveestimate-signaling.artlinco.workers.dev`.
+
+```bash
+npx wrangler login     # once per machine
+npm run deploy         # vinext build && wrangler deploy (config: wrangler.jsonc)
+```
+
+`wrangler.jsonc` holds the bindings (D1 `moveestimate` as `DB`, R2
+`moveestimate-media` as `MEDIA`) and the non-secret vars (`SIGNALING_URL`,
+`WP_ADMIN_URL`). Secrets are set with `npx wrangler secret put <NAME>`:
+`WP_SHARED_SECRET`, `TURN_KEY_ID`, `TURN_API_TOKEN`. Tables are created on
+first request (`ensureDatabase()`), so a fresh D1 needs no migration.
+
+### Progressive recording upload
+
+The client's recording is uploaded in numbered pieces every 10 s during the
+call (`POST /api/video-sessions/:id/parts?seq=N`), then finished with
+`POST /api/video-sessions/:id/complete` (`{ "parts": N }`), which concatenates
+the pieces into one R2 object. If the customer closes the tab before that, a
+call with no new piece for 5 minutes is assembled from the pieces that arrived
+when WordPress next asks (`GET /api/calls?ingested=0`, `GET /api/calls/:id`).
+See `db/recording-parts.ts`. The old one-shot `/upload` route stays for call
+pages opened before this change.
+
 ## Live estimate call
 
 The rep-initiated video walkthrough (`/video-call/:id` for the client,

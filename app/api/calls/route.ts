@@ -1,4 +1,5 @@
 import { createWpCall, listWpCallsAwaitingIngest } from "../../../db/sessions";
+import { assembleAbandonedCalls } from "../../../db/recording-parts";
 import { mintCallToken } from "../../call-token";
 import { callLinkOrigin, isWordPressRequest, wpSharedSecret } from "../../wp-auth";
 
@@ -79,6 +80,11 @@ export async function GET(request: Request) {
   if (url.searchParams.get("ingested") !== "0") {
     return Response.json({ calls: [] });
   }
+  // Calls whose customer closed the tab mid-upload become importable here,
+  // assembled from the pieces that arrived.
+  await assembleAbandonedCalls().catch((error: unknown) =>
+    console.warn("[calls] abandoned-call assembly failed", error),
+  );
   const rows = await listWpCallsAwaitingIngest();
   return Response.json({
     calls: rows.map((row) => ({

@@ -70,7 +70,14 @@ export function VideoCallInterface({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const mixDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const repAudioMixedRef = useRef(false);
-  const chunksRef = useRef<Blob[]>([]);
+  // Progressive upload: recorded chunks not yet sent, the next piece number,
+  // and byte counters for the "sending" progress. Sent chunks are dropped, so
+  // the phone doesn't hold the whole call in memory either.
+  const pendingRef = useRef<Blob[]>([]);
+  const seqRef = useRef(0);
+  const recordedBytesRef = useRef(0);
+  const sentBytesRef = useRef(0);
+  const inflightRef = useRef<Promise<void> | null>(null);
   const mimeTypeRef = useRef<string>("");
   const switchingRef = useRef(false);
   const finalizingRef = useRef(false);
@@ -88,6 +95,7 @@ export function VideoCallInterface({
   const [callState, setCallState] = useState<CallState | null>(null);
   const [repHere, setRepHere] = useState(false);
   const [repVideoReady, setRepVideoReady] = useState(false);
+  const [sendPct, setSendPct] = useState(0);
 
   // Acquire a camera for the given facing mode, releasing the previous one
   // first (many phones refuse two open cameras). The canvas keeps painting the
@@ -129,6 +137,39 @@ export function VideoCallInterface({
     if (track) await callRef.current?.replaceVideoTrack(track);
   }, []);
 
+  // Send everything recorded so far as the next numbered piece. One request
+  // at a time: a call made while one is in flight just waits for it. On
+  // failure the chunks stay pending and go out with the next attempt.
+  const sendPending = useCallback((): Promise<void> => {
+    if (inflightRef.current) return inflightRef.current;
+    const batch = pendingRef.current.slice();
+    if (batch.length === 0) return Promise.resolve();
+    const type = mimeTypeRef.current || "video/webm";
+    const blob = new Blob(batch, { type });
+    const seq = seqRef.current;
+    const request = (async () => {
+      const res = await fetch(`/api/video-sessions/${videoSessionId}/parts?seq=${seq}`, {
+        method: "POST",
+        headers: { "content-type": type, "x-video-size": String(blob.size) },
+        body: blob,
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || messages.uploadFailedError);
+      }
+      pendingRef.current.splice(0, batch.length);
+      seqRef.current = seq + 1;
+      sentBytesRef.current += blob.size;
+      if (recordedBytesRef.current > 0) {
+        setSendPct(Math.min(100, Math.round((sentBytesRef.current / recordedBytesRef.current) * 100)));
+      }
+    })().finally(() => {
+      inflightRef.current = null;
+    });
+    inflightRef.current = request;
+    return request;
+  }, [videoSessionId, messages]);
+
   const finalize = useCallback(
     async () => {
       if (finalizingRef.current) return;
@@ -156,15 +197,25 @@ export function VideoCallInterface({
         void audioCtxRef.current?.close();
         audioCtxRef.current = null;
 
-        if (chunksRef.current.length === 0) {
+        if (recordedBytesRef.current === 0) {
           throw new Error(messages.nothingRecordedError);
         }
-        const type = mimeTypeRef.current || "video/webm";
-        const blob = new Blob(chunksRef.current, { type });
-        const res = await fetch(`/api/video-sessions/${videoSessionId}/upload`, {
+        // Most of the call is already on the server; send the rest, retrying
+        // a few times through a flaky connection.
+        for (let attempt = 0; ; attempt++) {
+          try {
+            if (inflightRef.current) await inflightRef.current.catch(() => undefined);
+            while (pendingRef.current.length > 0) await sendPending();
+            break;
+          } catch (err) {
+            if (attempt >= 3) throw err;
+            await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+          }
+        }
+        const res = await fetch(`/api/video-sessions/${videoSessionId}/complete`, {
           method: "POST",
-          headers: { "content-type": type, "x-video-size": String(blob.size) },
-          body: blob,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ parts: seqRef.current }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -185,7 +236,7 @@ export function VideoCallInterface({
         setStage("error");
       }
     },
-    [videoSessionId, messages],
+    [videoSessionId, messages, sendPending],
   );
 
   const switchCamera = useCallback(async () => {
@@ -350,7 +401,10 @@ export function VideoCallInterface({
         const recorder = new MediaRecorder(recStream, mimeType ? { mimeType } : undefined);
         mediaRecorderRef.current = recorder;
         recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) chunksRef.current.push(e.data);
+          if (e.data.size > 0) {
+            pendingRef.current.push(e.data);
+            recordedBytesRef.current += e.data.size;
+          }
         };
         recorder.onerror = () => setError(messages.recordingStoppedError);
         recorder.start(1000);
@@ -430,6 +484,31 @@ export function VideoCallInterface({
     }
   }, [repHere, callState, stage, finalize]);
 
+  // Upload the recording as it happens, every few seconds, so ending the call
+  // only has a short tail left to send — and a tab closed mid-upload still
+  // leaves the server almost the whole call (assembled after a few minutes
+  // of silence; see db/recording-parts.ts).
+  useEffect(() => {
+    if (stage !== "live") return;
+    const timer = window.setInterval(() => {
+      void sendPending().catch(() => undefined);
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [stage, sendPending]);
+
+  // Ask before leaving while there's still recording to send. Mobile
+  // browsers often skip this prompt on tab close, which is why the upload
+  // above doesn't wait for the end.
+  useEffect(() => {
+    if (stage !== "live" && stage !== "ending") return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [stage]);
+
   // --- laser input --------------------------------------------------------
   const sendLaser = useCallback((clientX: number, clientY: number, active: boolean) => {
     // A pointer counts as the gesture some browsers need before audio flows.
@@ -480,7 +559,14 @@ export function VideoCallInterface({
           <div className="done-mark done-mark--warn" aria-hidden="true">!</div>
           <h1>{messages.errorTitle}</h1>
           <p>{error ?? messages.somethingWrong}</p>
-          <button className="button button--primary" onClick={() => window.location.reload()}>
+          {/* After a failed send the recording is still in this page — retry
+              the send. Reloading would throw it away. */}
+          <button
+            className="button button--primary"
+            onClick={() =>
+              recordedBytesRef.current > 0 ? void finalize() : window.location.reload()
+            }
+          >
             {messages.tryAgain}
           </button>
         </div>
@@ -571,8 +657,9 @@ export function VideoCallInterface({
         <div className="video-info">
           <p className="recording-indicator">
             {stage === "live" && messages.recordingIndicator}
-            {stageBusy && messages.sendingWalkthrough}
+            {stageBusy && `${messages.sendingWalkthrough} ${sendPct}%`}
           </p>
+          {stageBusy && <p className="session-info">{messages.keepPageOpen}</p>}
           <p className="session-info">{messages.dragToPoint}</p>
         </div>
       </div>
