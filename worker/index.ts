@@ -44,9 +44,24 @@ const worker = {
     return handler.fetch(request, env, ctx);
   },
 
-  // Daily cron (wrangler.jsonc → triggers): delete recordings WordPress has
-  // already imported, so this app's storage doesn't grow forever.
-  async scheduled(_controller: unknown, _env: Env, ctx: ExecutionContext): Promise<void> {
+  // Cron triggers (wrangler.jsonc → triggers):
+  // - every 5 min: open WordPress's wp-cron.php, so the plugin's 5-minute
+  //   import sweep runs on time even when nobody visits the site (WP-Cron only
+  //   runs on page visits);
+  // - daily: delete recordings WordPress has already imported.
+  async scheduled(controller: { cron: string }, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (controller.cron === "*/5 * * * *") {
+      const url = (env as unknown as { WP_CRON_URL?: string }).WP_CRON_URL;
+      if (!url) return;
+      ctx.waitUntil(
+        fetch(url, { headers: { "user-agent": "moveestimate-wp-cron-ping" } })
+          .then((res) => {
+            if (!res.ok) console.warn(`[wp-cron] ${url} → HTTP ${res.status}`);
+          })
+          .catch((error: unknown) => console.warn(`[wp-cron] ${url} failed`, error)),
+      );
+      return;
+    }
     ctx.waitUntil(cleanupOldRecordings().then(() => undefined));
   },
 };
