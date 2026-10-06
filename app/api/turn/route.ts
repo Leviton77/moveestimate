@@ -34,6 +34,9 @@ export async function GET() {
       },
     );
     if (!res.ok) {
+      // Usually a wrong/swapped TURN_KEY_ID / TURN_API_TOKEN — visible in
+      // `npx wrangler tail` and the dashboard's Worker logs.
+      console.warn(`[turn] credential request failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
       return Response.json({ iceServers: [STUN], turn: false }, { status: 200 });
     }
     const data = (await res.json()) as { iceServers?: RTCIceServer | RTCIceServer[] };
