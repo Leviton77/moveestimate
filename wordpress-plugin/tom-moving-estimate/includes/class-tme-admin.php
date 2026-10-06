@@ -315,6 +315,12 @@ final class TME_Admin
                                     <video src="<?php echo esc_url($video_url); ?>" controls playsinline preload="metadata" data-tme-video></video>
                                     <canvas data-tme-canvas aria-label="Video annotation area"></canvas>
                                 </div>
+                                <div class="tme-tools tme-speed" data-tme-speed role="group" aria-label="<?php esc_attr_e('Playback speed', 'tom-moving-estimate'); ?>">
+                                    <strong><?php esc_html_e('Speed', 'tom-moving-estimate'); ?></strong>
+                                    <?php foreach (array('1' => '1×', '1.1' => '1.1×', '1.25' => '1.25×', '1.5' => '1.5×', '2' => '2×') as $rate => $label) : ?>
+                                        <button class="button<?php echo $rate === '1' ? ' is-active' : ''; ?>" type="button" data-rate="<?php echo esc_attr($rate); ?>" aria-pressed="<?php echo $rate === '1' ? 'true' : 'false'; ?>"><?php echo esc_html($label); ?></button>
+                                    <?php endforeach; ?>
+                                </div>
                                 <div class="tme-tools" data-tme-tools>
                                     <strong><?php esc_html_e('Tools', 'tom-moving-estimate'); ?></strong>
                                     <button class="button is-active" type="button" data-tool="laser">Laser</button>

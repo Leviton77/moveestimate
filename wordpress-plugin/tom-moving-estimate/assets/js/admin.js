@@ -19,6 +19,38 @@
       if (!window.confirm("Delete " + label + " now? This cannot be undone.")) event.preventDefault();
     });
   });
+  // Playback speed. Remembered per browser so the rep's preferred speed
+  // carries over to the next recording. Browsers keep voice pitch normal
+  // when sped up (preservesPitch defaults to true).
+  const speed = form.querySelector("[data-tme-speed]");
+  if (video && speed) {
+    const RATE_KEY = "tme_playback_rate";
+    const setRate = function (rate) {
+      const value = Number(rate);
+      if (!(value > 0)) return;
+      video.defaultPlaybackRate = value;
+      video.playbackRate = value;
+    };
+    speed.querySelectorAll("[data-rate]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        setRate(button.dataset.rate);
+        try { window.localStorage.setItem(RATE_KEY, button.dataset.rate); } catch (_) { /* storage blocked */ }
+      });
+    });
+    // Fires for our buttons and for the browser's own speed menu (Chrome's ⋮)
+    // alike, so the highlight always matches the real speed.
+    video.addEventListener("ratechange", function () {
+      speed.querySelectorAll("[data-rate]").forEach(function (button) {
+        const on = Number(button.dataset.rate) === video.playbackRate;
+        button.classList.toggle("is-active", on);
+        button.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    });
+    let saved = null;
+    try { saved = window.localStorage.getItem(RATE_KEY); } catch (_) { saved = null; }
+    if (saved && speed.querySelector('[data-rate="' + saved + '"]')) setRate(saved);
+  }
+
   if (!video || !canvas || !wrap || !hidden || !tools) return;
 
   let annotations = [];

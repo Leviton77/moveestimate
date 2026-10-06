@@ -383,6 +383,20 @@ validation, update injection, the shipped `update.json` parses).
 rc19 has to be installed by hand once on each site; after that, turn on
 **Enable auto-updates** for Tom Moving Estimate on the Plugins page.
 
+## 1.2.0-rc20 — playback speed on the review screen
+
+- `includes/class-tme-admin.php`: a **Speed** row (1×, 1.1×, 1.25×, 1.5×,
+  2×) under the review video, for every recording (live walkthroughs and
+  customer uploads).
+- `assets/js/admin.js`: sets `playbackRate` + `defaultPlaybackRate`;
+  remembers the choice in `localStorage` (`tme_playback_rate`, wrapped in
+  try/catch); the highlight follows `ratechange`, so it also tracks the
+  browser's own speed menu. Pitch is preserved (browser default).
+- `assets/css/admin.css`: `.tme-speed` separator under the row.
+
+Retest: open a video estimate, pick 1.5× → plays faster, voice not
+chipmunked; reload the page → still 1.5×; open another estimate → 1.5×.
+
 ## Releasing (rc19 onward)
 
 1. Bump `Version:` + `TME_VERSION` in `tom-moving-estimate.php`, `Stable tag`
