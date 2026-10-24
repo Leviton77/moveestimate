@@ -138,7 +138,7 @@ final class TME_Admin
                             ?>
                             <tr>
                                 <td class="tme-check-col"><input type="checkbox" name="session_ids[]" value="<?php echo esc_attr($session->id); ?>" aria-label="<?php echo esc_attr(sprintf(__('Select %s', 'tom-moving-estimate'), $session->client_name)); ?>"></td>
-                                <td><strong><a href="<?php echo esc_url($review); ?>"><?php echo esc_html($session->client_name); ?></a></strong><small><?php echo esc_html($session->email); ?><br><?php echo esc_html($session->phone); ?></small></td>
+                                <td><strong><a href="<?php echo esc_url($review); ?>"><?php echo esc_html($session->client_name); ?></a><?php if (($session->language ?? 'en') === 'fr') : ?> <abbr title="<?php esc_attr_e('Asked in French', 'tom-moving-estimate'); ?>">FR</abbr><?php endif; ?></strong><small><?php echo esc_html($session->email); ?><br><?php echo esc_html($session->phone); ?></small></td>
                                 <td><strong><?php echo esc_html(wp_date('M j, Y', strtotime($session->move_date . ' 12:00:00'))); ?></strong><small><?php echo esc_html($session->estimated_size); ?><br><?php echo esc_html($session->current_address); ?></small></td>
                                 <td><span class="tme-status tme-status--<?php echo esc_attr($session->status); ?>"><?php echo esc_html(ucfirst($session->status)); ?></span></td>
                                 <td>

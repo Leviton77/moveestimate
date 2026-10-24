@@ -30,6 +30,7 @@ final class TME_DB
             destination_address varchar(255) NOT NULL,
             estimated_size varchar(32) NOT NULL,
             special_items text NULL,
+            language varchar(5) NOT NULL DEFAULT 'en',
             submission_type varchar(20) NOT NULL DEFAULT 'video',
             submitted_at datetime NULL,
             photos longtext NULL,
@@ -99,6 +100,7 @@ final class TME_DB
                 'destination_address' => $data['destination_address'],
                 'estimated_size'      => $data['estimated_size'],
                 'special_items'       => $data['special_items'],
+                'language'            => $data['language'] ?? 'en',
                 'submission_type'     => $data['submission_type'],
                 'submitted_at'        => $data['submitted_at'] ?? null,
                 'photos'              => '[]',
@@ -110,7 +112,7 @@ final class TME_DB
                 'annotations'         => '[]',
                 'rep_notes'           => '',
             ),
-            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
         );
 
         if (!$inserted) {

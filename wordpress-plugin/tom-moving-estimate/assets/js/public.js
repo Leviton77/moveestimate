@@ -56,6 +56,20 @@
   let busy = false;
   let recorderPlaceholder = null;
 
+  const strings = TMEPublic.strings || {};
+
+  // Looks up the French text for an English string and fills %s / %d / %1$s placeholders.
+  function t(text) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    const template = Object.prototype.hasOwnProperty.call(strings, text) ? strings[text] : text;
+    let next = 0;
+    return template.replace(/%(?:(\d+)\$)?([sd%])/g, function (match, position, type) {
+      if (type === "%") return "%";
+      const value = args[position ? Number(position) - 1 : next++];
+      return value === undefined ? "" : String(value);
+    });
+  }
+
   function show(element, visible) {
     if (element) element.hidden = !visible;
   }
@@ -77,11 +91,11 @@
 
   async function api(path, options) {
     const response = await fetch(TMEPublic.restUrl + path, Object.assign({
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-TME-Lang": TMEPublic.lang || "en" },
     }, options || {}));
     let data = {};
     try { data = await response.json(); } catch (_) { data = {}; }
-    if (!response.ok) throw new Error(data.message || "Something went wrong. Please try again.");
+    if (!response.ok) throw new Error(data.message || t("Something went wrong. Please try again."));
     return data;
   }
 
@@ -97,17 +111,17 @@
       };
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error((label || "File") + " upload failed (" + xhr.status + "). Please try again."));
+        else reject(new Error(t("%s upload failed (%d). Please try again.", label || "File", xhr.status)));
       };
-      xhr.onerror = () => reject(new Error("The browser could not reach private media storage. Check your connection and try again."));
+      xhr.onerror = () => reject(new Error(t("The browser could not reach private media storage. Check your connection and try again.")));
       xhr.send(blob);
     });
   }
 
   function doneCopy(type) {
-    if (type === "photos") return "Your photos were uploaded securely. Tom Moving will review them and follow up with you.";
-    if (type === "video") return "Your video walkthrough was uploaded securely. Tom Moving will review it and follow up with you.";
-    return "Your moving information was received. Tom Moving will review it and follow up with you.";
+    if (type === "photos") return t("Your photos were uploaded securely. Tom Moving will review them and follow up with you.");
+    if (type === "video") return t("Your video walkthrough was uploaded securely. Tom Moving will review it and follow up with you.");
+    return t("Your moving information was received. Tom Moving will review it and follow up with you.");
   }
 
   function openDone(clientName, type) {
@@ -121,13 +135,13 @@
     show(doneView, true);
     const heading = doneView.querySelector("h2");
     const copy = doneView.querySelector("[data-tme-done-message]");
-    if (heading && clientName) heading.textContent = "Thank you, " + clientName + "!";
+    if (heading && clientName) heading.textContent = t("Thank you, %s!", clientName);
     if (copy) copy.textContent = doneCopy(type);
     doneView.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   function openChoice(clientName) {
-    q("[data-tme-choice-client-name]").textContent = clientName || "there";
+    q("[data-tme-choice-client-name]").textContent = clientName || t("there");
     show(formView, false);
     show(choiceView, true);
     show(photoView, false);
@@ -137,7 +151,7 @@
   }
 
   function openPhotos(clientName) {
-    q("[data-tme-photo-client-name]").textContent = clientName || "there";
+    q("[data-tme-photo-client-name]").textContent = clientName || t("there");
     show(formView, false);
     show(choiceView, false);
     show(recorderView, false);
@@ -148,7 +162,7 @@
   }
 
   function openRecorder(clientName) {
-    q("[data-tme-client-name]").textContent = clientName || "there";
+    q("[data-tme-client-name]").textContent = clientName || t("there");
     show(formView, false);
     show(choiceView, false);
     show(photoView, false);
@@ -172,7 +186,7 @@
       if (result.submissionType === "photos") openPhotos(clientName);
       else openRecorder(clientName);
     } catch (error) {
-      message(error && error.message ? error.message : "The media walkthrough could not be started. Please try again.");
+      message(error && error.message ? error.message : t("The media walkthrough could not be started. Please try again."));
     } finally {
       busy = false;
       choosePhotosButton.disabled = false;
@@ -200,16 +214,16 @@
     const incoming = Array.from(files || []);
     for (const file of incoming) {
       if (selectedPhotos.length >= TMEPublic.maxPhotos) {
-        message("You can submit up to " + TMEPublic.maxPhotos + " photos.");
+        message(t("You can submit up to %d photos.", TMEPublic.maxPhotos));
         break;
       }
       const contentType = photoContentType(file);
       if (!contentType) {
-        message("Please choose JPEG, PNG, WebP, HEIC or HEIF photos.");
+        message(t("Please choose JPEG, PNG, WebP, HEIC or HEIF photos."));
         continue;
       }
       if (file.size < 1 || file.size > TMEPublic.maxPhotoBytes) {
-        message("Each photo must be smaller than " + TMEPublic.maxPhotoMb + " MB.");
+        message(t("Each photo must be smaller than %d MB.", TMEPublic.maxPhotoMb));
         continue;
       }
       selectedPhotos.push({
@@ -238,24 +252,24 @@
       card.className = "tme-photo-card";
       const image = document.createElement("img");
       image.src = photo.url;
-      image.alt = "Selected photo " + (index + 1);
+      image.alt = t("Selected photo %d", index + 1);
       image.addEventListener("error", function () { image.hidden = true; });
       const details = document.createElement("div");
       const name = document.createElement("strong");
-      name.textContent = photo.file.name || "Photo " + (index + 1);
+      name.textContent = photo.file.name || t("Photo %d", index + 1);
       const size = document.createElement("small");
       size.textContent = Math.max(1, Math.round(photo.file.size / 1024)) + " KB";
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "tme-photo-remove";
-      remove.textContent = "Remove";
-      remove.setAttribute("aria-label", "Remove " + name.textContent);
+      remove.textContent = t("Remove");
+      remove.setAttribute("aria-label", t("Remove %s", name.textContent));
       remove.addEventListener("click", () => removePhoto(photo.clientId));
       details.append(name, size);
       card.append(image, details, remove);
       photoGrid.appendChild(card);
     });
-    photoCount.textContent = selectedPhotos.length + " of " + TMEPublic.maxPhotos + " photos";
+    photoCount.textContent = t("%1$d of %2$d photos", selectedPhotos.length, TMEPublic.maxPhotos);
     show(photoEmpty, selectedPhotos.length === 0);
     photoSubmit.disabled = busy || selectedPhotos.length === 0;
   }
@@ -272,7 +286,7 @@
     try {
       for (let index = 0; index < selectedPhotos.length; index += 1) {
         const photo = selectedPhotos[index];
-        photoProgressText.textContent = "Preparing photo " + (index + 1) + " of " + selectedPhotos.length + "...";
+        photoProgressText.textContent = t("Preparing photo %1$d of %2$d...", index + 1, selectedPhotos.length);
         const signed = await api("sessions/" + token + "/photo-upload-url", {
           method: "POST",
           body: JSON.stringify({
@@ -286,11 +300,11 @@
           const fileFraction = total ? loaded / total : 0;
           const overall = Math.round(((index + fileFraction) / selectedPhotos.length) * 100);
           photoProgressBar.style.width = Math.min(100, overall) + "%";
-          photoProgressText.textContent = "Uploading photo " + (index + 1) + " of " + selectedPhotos.length + "... " + Math.round(fileFraction * 100) + "%";
+          photoProgressText.textContent = t("Uploading photo %1$d of %2$d... %3$d%%", index + 1, selectedPhotos.length, Math.round(fileFraction * 100));
         }, "Photo");
         uploaded.push({ id: signed.id, key: signed.key });
       }
-      photoProgressText.textContent = "Verifying photos...";
+      photoProgressText.textContent = t("Verifying photos...");
       await api("sessions/" + token + "/complete-photos", {
         method: "POST",
         body: JSON.stringify({ photos: uploaded }),
@@ -300,7 +314,7 @@
       selectedPhotos = [];
       openDone(name, "photos");
     } catch (error) {
-      message(error && error.message ? error.message : "The photos could not be submitted. Please try again.");
+      message(error && error.message ? error.message : t("The photos could not be submitted. Please try again."));
     } finally {
       busy = false;
       photoSubmit.disabled = selectedPhotos.length === 0;
@@ -405,7 +419,7 @@
     video.controls = false;
     video.muted = true;
     video.autoplay = true;
-    help.textContent = "Hold your phone horizontally when possible, then walk at a comfortable pace.";
+    help.textContent = t("Hold your phone horizontally when possible, then walk at a comfortable pace.");
   }
 
   function reviewState() {
@@ -419,13 +433,13 @@
     video.controls = true;
     video.muted = false;
     video.autoplay = false;
-    help.textContent = "Review your walkthrough before sending it.";
+    help.textContent = t("Review your walkthrough before sending it.");
   }
 
   async function enableCamera(nextFacing) {
     message("");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-      message("This browser cannot record directly. Choose an existing video instead, or use the current Safari, Chrome or Edge browser.");
+      message(t("This browser cannot record directly. Choose an existing video instead, or use the current Safari, Chrome or Edge browser."));
       return;
     }
     try {
@@ -439,7 +453,7 @@
       await video.play().catch(() => undefined);
       previewState();
     } catch (_) {
-      message("Camera or microphone access was blocked. Allow access in your browser settings, then try again. You can also choose an existing video.");
+      message(t("Camera or microphone access was blocked. Allow access in your browser settings, then try again. You can also choose an existing video."));
     }
   }
 
@@ -466,19 +480,19 @@
       mediaRecorder.ondataavailable = (event) => { if (event.data && event.data.size) chunks.push(event.data); };
       mediaRecorder.onerror = () => {
         exitRecordingView();
-        message("Recording stopped unexpectedly. Please try again.");
+        message(t("Recording stopped unexpectedly. Please try again."));
         stopTracks();
       };
       mediaRecorder.onstop = () => {
         selectedBlob = new Blob(chunks, { type: mediaRecorder.mimeType || mimeType || "video/webm" });
         if (!selectedBlob.size) {
-          message("No video was captured. Please try again.");
+          message(t("No video was captured. Please try again."));
           show(permission, true);
           show(recorderShell, false);
           return;
         }
         if (selectedBlob.size > TMEPublic.maxBytes) {
-          message("This recording is larger than " + TMEPublic.maxMb + " MB. Please retake a shorter walkthrough.");
+          message(t("This recording is larger than %d MB. Please retake a shorter walkthrough.", TMEPublic.maxMb));
           clearSelected();
           show(permission, true);
           show(recorderShell, false);
@@ -494,16 +508,16 @@
       show(stopButton, true);
       show(switchButton, false);
       show(recPill, true);
-      help.textContent = "Recording " + timeLabel(seconds) + " - maximum 15:00";
+      help.textContent = t("Recording %s - maximum 15:00", timeLabel(seconds));
       clockTimer = window.setInterval(() => {
         seconds += 1;
         clock.textContent = timeLabel(seconds);
-        help.textContent = "Recording " + timeLabel(seconds) + " - maximum 15:00";
+        help.textContent = t("Recording %s - maximum 15:00", timeLabel(seconds));
       }, 1000);
       limitTimer = window.setTimeout(stopRecording, TMEPublic.maxSeconds * 1000);
     } catch (_) {
       exitRecordingView();
-      message("This browser could not start the recorder. Try the current Safari, Chrome or Edge browser.");
+      message(t("This browser could not start the recorder. Try the current Safari, Chrome or Edge browser."));
     }
   }
 
@@ -519,12 +533,12 @@
     message("");
     if (!file) return;
     if (file.size > TMEPublic.maxBytes) {
-      message("This video is larger than " + TMEPublic.maxMb + " MB. Please choose or record a shorter video.");
+      message(t("This video is larger than %d MB. Please choose or record a shorter video.", TMEPublic.maxMb));
       fileInput.value = "";
       return;
     }
     if (!/^video\/(mp4|webm|quicktime)$/i.test(file.type)) {
-      message("Please choose an MP4, WebM or QuickTime video.");
+      message(t("Please choose an MP4, WebM or QuickTime video."));
       fileInput.value = "";
       return;
     }
@@ -538,7 +552,7 @@
     video.src = selectedUrl;
     video.onloadedmetadata = function () {
       if (Number.isFinite(video.duration) && video.duration > TMEPublic.maxSeconds + 2) {
-        message("The video is longer than 15 minutes. Please choose or record a shorter walkthrough.");
+        message(t("The video is longer than 15 minutes. Please choose or record a shorter walkthrough."));
         clearSelected();
         show(permission, true);
         show(recorderShell, false);
@@ -556,7 +570,7 @@
     show(progress, true);
     show(progressText, true);
     progressBar.style.width = "0%";
-    progressText.textContent = "Preparing secure upload...";
+    progressText.textContent = t("Preparing secure upload...");
     try {
       const contentType = (selectedBlob.type || "video/mp4").split(";")[0].toLowerCase();
       const signed = await api("sessions/" + token + "/upload-url", {
@@ -566,9 +580,9 @@
       await uploadToR2(signed.uploadUrl, selectedBlob, contentType, function (loaded, total) {
         const percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
         progressBar.style.width = percent + "%";
-        progressText.textContent = "Uploading securely... " + percent + "%";
+        progressText.textContent = t("Uploading securely... %d%%", percent);
       }, "Video");
-      progressText.textContent = "Verifying upload...";
+      progressText.textContent = t("Verifying upload...");
       await api("sessions/" + token + "/complete", {
         method: "POST",
         body: JSON.stringify({ key: signed.key }),
@@ -577,7 +591,7 @@
       clearSelected();
       openDone(name, "video");
     } catch (error) {
-      message(error && error.message ? error.message : "Upload failed. Please try again.");
+      message(error && error.message ? error.message : t("Upload failed. Please try again."));
     } finally {
       busy = false;
       submitButton.disabled = false;
@@ -594,7 +608,7 @@
     message("");
     const original = formSubmit.textContent;
     formSubmit.disabled = true;
-    formSubmit.textContent = "Submitting...";
+    formSubmit.textContent = t("Submitting...");
     const values = Object.fromEntries(new FormData(form).entries());
     values.consent = Boolean(values.consent);
     values.submissionType = "info";
@@ -606,7 +620,7 @@
       window.history.replaceState({}, "", url.toString());
       openChoice(result.clientName || values.clientName);
     } catch (error) {
-      message(error && error.message ? error.message : "The estimate could not be started. Please try again.");
+      message(error && error.message ? error.message : t("The estimate could not be started. Please try again."));
     } finally {
       busy = false;
       formSubmit.disabled = false;
