@@ -146,6 +146,8 @@ final class TME_I18n
         'Photos have already been submitted for this estimate.' => 'Des photos ont déjà été envoyées pour cette soumission.',
         'The photo upload could not be prepared.' => 'L\'envoi de la photo n\'a pas pu être préparé.',
         'This photo changed before upload. Remove it and add it again.' => 'Cette photo a changé avant l\'envoi. Retirez-la et ajoutez-la de nouveau.',
+        'The upload could not be started. Please try again.' => 'L\'envoi n\'a pas pu commencer. Veuillez réessayer.',
+        'Connection lost. Retrying part %1$d of %2$d...' => 'Connexion perdue. Nouvel essai pour la partie %1$d sur %2$d...',
         'The upload could not be verified.' => 'L\'envoi n\'a pas pu être vérifié.',
         'The upload has not finished yet. Wait a moment and try again.' => 'L\'envoi n\'est pas terminé. Attendez un moment et réessayez.',
         'The uploaded video is too large.' => 'La vidéo envoyée est trop lourde.',
@@ -163,6 +165,10 @@ final class TME_I18n
         '%d photos' => '%d photos',
         'We received your moving-estimate request' => 'Nous avons bien reçu votre demande de soumission',
         "Hi %1\$s,\n\nWe received your moving-estimate request (%2\$s). Tom Moving will review it and follow up with you." => "Bonjour %1\$s,\n\nNous avons bien reçu votre demande de soumission (%2\$s). Déménagement Tom va l'examiner et vous revenir.",
+        'photos' => 'vos photos',
+        'video' => 'votre vidéo',
+        'Finish sending your photos or video' => 'Terminez l\'envoi de vos photos ou de votre vidéo',
+        "Hi %1\$s,\n\nYour moving-estimate request is saved, but we did not receive your %2\$s. You can finish from this link (it works for 7 days):\n\n%3\$s\n\nIf the upload keeps failing, call us at 819-272-7231 and we can do a live video call instead." => "Bonjour %1\$s,\n\nVotre demande de soumission est enregistrée, mais nous n'avons pas reçu %2\$s. Vous pouvez terminer avec ce lien (valide 7 jours) :\n\n%3\$s\n\nSi l'envoi ne fonctionne toujours pas, appelez-nous au 819-272-7231 : on peut faire un appel vidéo en direct à la place.",
         'Your photos or video are stored privately and automatically deleted after %d days.' => 'Vos photos ou votre vidéo sont gardées en privé et supprimées automatiquement après %d jours.',
     );
 

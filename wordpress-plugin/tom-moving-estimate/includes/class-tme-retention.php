@@ -44,12 +44,51 @@ final class TME_Retention
 
     public static function sweep(): void
     {
+        foreach (TME_DB::unfinished_media_candidates() as $candidate) {
+            self::send_unfinished_reminder((int) $candidate->id);
+        }
         $candidates = TME_DB::retention_candidates();
         foreach ($candidates['warnings'] as $candidate) {
             self::send_warning((int) $candidate->id);
         }
         foreach ($candidates['deletions'] as $candidate) {
             self::delete_media((int) $candidate->id);
+        }
+    }
+
+    /**
+     * A customer chose photos or video but nothing arrived after 30 minutes. The office is told so
+     * someone can call, and the customer gets one email with a link back to the same request.
+     */
+    public static function send_unfinished_reminder(int $id): void
+    {
+        $session = TME_DB::get($id);
+        if (!$session || $session->submitted_at || $session->video_uploaded_at || !empty($session->reminder_sent_at)) {
+            return;
+        }
+        TME_DB::update($id, array('reminder_sent_at' => current_time('mysql', true)), array('%s'));
+
+        $settings = TME_Plugin::settings();
+        $lang = TME_I18n::lang($session->language ?? 'en');
+        $what = $session->submission_type === 'photos' ? 'photos' : 'video';
+        $state = ($session->pending_video_key || TME_DB::photos($session, true)) ? 'started uploading but did not finish' : 'did not send anything yet';
+        $admin_email = sanitize_email((string) $settings['notification_email']);
+        if ($admin_email) {
+            $message = "{$session->client_name} chose to send {$what} over 30 minutes ago and {$state}.\n\n";
+            $message .= "Phone: {$session->phone}\nMove date: {$session->move_date}\n";
+            $message .= 'Language: ' . ($lang === 'fr' ? 'French' : 'English') . "\n";
+            $message .= 'Review: ' . admin_url('admin.php?page=tme-estimates&session=' . $session->id) . "\n";
+            $message .= is_email($session->email) && !empty($session->form_url)
+                ? "The customer was emailed a link to finish.\n"
+                : "The customer has no email or form link on file, so a call is the best follow-up.\n";
+            wp_mail($admin_email, "Estimate not finished: {$session->client_name}", $message);
+        }
+
+        if (is_email($session->email) && !empty($session->form_url)) {
+            $link = add_query_arg('session', $session->public_token, (string) $session->form_url);
+            $message = sprintf(TME_I18n::t("Hi %1\$s,\n\nYour moving-estimate request is saved, but we did not receive your %2\$s. You can finish from this link (it works for 7 days):\n\n%3\$s\n\nIf the upload keeps failing, call us at 819-272-7231 and we can do a live video call instead.", $lang), $session->client_name, TME_I18n::t($what, $lang), $link);
+            $message .= "\n\n" . TME_I18n::t('Tom Moving', $lang);
+            wp_mail($session->email, TME_I18n::t('Finish sending your photos or video', $lang), $message);
         }
     }
 

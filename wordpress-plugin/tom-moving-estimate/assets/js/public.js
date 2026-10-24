@@ -103,7 +103,7 @@
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", url, true);
-      xhr.setRequestHeader("Content-Type", contentType);
+      if (contentType) xhr.setRequestHeader("Content-Type", contentType);
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && typeof onProgress === "function") {
           onProgress(event.loaded, event.total);
@@ -116,6 +116,54 @@
       xhr.onerror = () => reject(new Error(t("The browser could not reach private media storage. Check your connection and try again.")));
       xhr.send(blob);
     });
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  async function withRetries(partNumber, partCount, attemptOnce) {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await attemptOnce();
+      } catch (error) {
+        if (attempt >= 4) throw error;
+        progressText.textContent = t("Connection lost. Retrying part %1$d of %2$d...", partNumber, partCount);
+        await wait(2000 * attempt);
+      }
+    }
+  }
+
+  // Sends the video in parts. A part that fails on a weak connection is retried
+  // up to 3 times, so one dropped connection no longer loses the whole upload.
+  async function uploadVideoInParts(blob, contentType) {
+    const started = await api("sessions/" + token + "/video-upload", {
+      method: "POST",
+      body: JSON.stringify({ contentType: contentType, size: blob.size }),
+    });
+    const partSize = started.partSize;
+    const partCount = started.partCount;
+    let doneBytes = 0;
+    const showProgress = (extra) => {
+      const percent = Math.min(100, Math.round(((doneBytes + extra) / blob.size) * 100));
+      progressBar.style.width = percent + "%";
+      progressText.textContent = t("Uploading securely... %d%%", percent);
+    };
+    for (let first = 1; first <= partCount; first += 5) {
+      const numbers = [];
+      for (let n = first; n < first + 5 && n <= partCount; n += 1) numbers.push(n);
+      const signed = await withRetries(first, partCount, () => api("sessions/" + token + "/video-parts", {
+        method: "POST",
+        body: JSON.stringify({ parts: numbers }),
+      }));
+      for (const n of numbers) {
+        const part = blob.slice((n - 1) * partSize, Math.min(blob.size, n * partSize));
+        await withRetries(n, partCount, () => uploadToR2(signed.urls[n], part, "", (loaded) => showProgress(loaded), "Video"));
+        doneBytes += part.size;
+        showProgress(0);
+      }
+    }
+    return started.key;
   }
 
   function doneCopy(type) {
@@ -573,19 +621,11 @@
     progressText.textContent = t("Preparing secure upload...");
     try {
       const contentType = (selectedBlob.type || "video/mp4").split(";")[0].toLowerCase();
-      const signed = await api("sessions/" + token + "/upload-url", {
-        method: "POST",
-        body: JSON.stringify({ contentType: contentType, size: selectedBlob.size }),
-      });
-      await uploadToR2(signed.uploadUrl, selectedBlob, contentType, function (loaded, total) {
-        const percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
-        progressBar.style.width = percent + "%";
-        progressText.textContent = t("Uploading securely... %d%%", percent);
-      }, "Video");
+      const key = await uploadVideoInParts(selectedBlob, contentType);
       progressText.textContent = t("Verifying upload...");
       await api("sessions/" + token + "/complete", {
         method: "POST",
-        body: JSON.stringify({ key: signed.key }),
+        body: JSON.stringify({ key: key }),
       });
       const name = q("[data-tme-client-name]").textContent;
       clearSelected();
@@ -612,6 +652,7 @@
     const values = Object.fromEntries(new FormData(form).entries());
     values.consent = Boolean(values.consent);
     values.submissionType = "info";
+    values.formUrl = TMEPublic.estimateUrl;
     try {
       const result = await api("sessions", { method: "POST", body: JSON.stringify(values) });
       token = result.token;

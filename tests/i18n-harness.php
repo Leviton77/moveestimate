@@ -43,6 +43,8 @@ function wp_localize_script($handle, $name, $data) { $GLOBALS['__localized'] = $
 function rest_url($path = '') { return 'https://example.test/wp-json/' . $path; }
 function get_permalink() { return 'https://example.test/soumission/'; }
 function admin_url($path = '') { return 'https://example.test/wp-admin/' . $path; }
+function home_url($path = '') { return 'https://example.test' . $path; }
+function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
 function current_time($type, $gmt = false) { return gmdate('Y-m-d H:i:s'); }
 function get_transient($key) { return 0; }
 function set_transient($key, $value, $ttl) { return true; }
@@ -138,10 +140,13 @@ check('English page keeps English text', str_contains($html_en, 'Request your mo
 
 echo "create_session\n";
 $GLOBALS['__mail'] = array();
-$result = localized_call('create_session', new WP_REST_Request(base_payload(), array('x-tme-lang' => 'fr')));
+$result = localized_call('create_session', new WP_REST_Request(base_payload(array('formUrl' => 'https://example.test/soumission/?session=old')), array('x-tme-lang' => 'fr')));
 check('accepted without email, destination or size', $result instanceof WP_REST_Response && $result->status === 201, is_object($result) ? print_r($result, true) : '');
 check('language stored as fr', ($GLOBALS['__created'][0]['language'] ?? '') === 'fr');
-check('no customer email when none given', count($GLOBALS['__mail']) === 1 && $GLOBALS['__mail'][0]['to'] === 'office@example.test');
+check('form page kept for the reminder link', ($GLOBALS['__created'][0]['form_url'] ?? '') === 'https://example.test/soumission/');
+localized_call('create_session', new WP_REST_Request(base_payload(array('formUrl' => 'https://evil.example/phish')), array('x-tme-lang' => 'fr')));
+check('form page from another site ignored', ($GLOBALS['__created'][1]['form_url'] ?? 'x') === '');
+check('no customer email when none given', $GLOBALS['__mail'] && !array_filter($GLOBALS['__mail'], static fn($m) => $m['to'] !== 'office@example.test'));
 check('office email names the language', str_contains($GLOBALS['__mail'][0]['message'] ?? '', 'Language: French'));
 
 $GLOBALS['__mail'] = array();

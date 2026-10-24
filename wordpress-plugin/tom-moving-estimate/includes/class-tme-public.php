@@ -8,6 +8,8 @@ final class TME_Public
 {
     private const HOME_SIZES = array('Studio', '1 bedroom', '2 bedrooms', '3 bedrooms', '4+ bedrooms', 'House', 'Storage unit');
     private const SUBMISSION_TYPES = array('info', 'photos', 'video');
+    /** Video goes up in 8 MB parts; R2 needs at least 5 MB for every part but the last. */
+    private const VIDEO_PART_BYTES = 8 * 1048576;
     private const PHOTO_TYPES = array(
         'image/jpeg' => 'jpg',
         'image/png'  => 'png',
@@ -42,6 +44,16 @@ final class TME_Public
         register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/upload-url', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => self::localized('upload_url'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/video-upload', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => self::localized('start_video_upload'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/video-parts', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => self::localized('video_part_urls'),
             'permission_callback' => '__return_true',
         ));
         register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/complete', array(
@@ -136,6 +148,7 @@ final class TME_Public
             'submission_type'     => $submission_type,
             'submitted_at'        => $submission_type === 'info' ? current_time('mysql', true) : null,
             'language'            => self::$lang,
+            'form_url'            => self::same_site_url((string) ($payload['formUrl'] ?? '')),
         );
 
         // Email, destination and home size are optional: many customers only know where they are leaving from.
@@ -171,6 +184,15 @@ final class TME_Public
             'submissionType' => $session->submission_type,
             'completed'      => $submission_type === 'info',
         ), 201);
+    }
+
+    /** Keeps the page the form was filled on, so a reminder can link back to it. Other sites are ignored. */
+    private static function same_site_url(string $url): string
+    {
+        $url = esc_url_raw(mb_substr($url, 0, 255));
+        $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+        $home = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        return ($url !== '' && $host === $home) ? strtok($url, '?#') : '';
     }
 
     public static function get_session(WP_REST_Request $request)
@@ -231,6 +253,106 @@ final class TME_Public
         );
     }
 
+    /** Checks shared by the single-PUT and multipart video uploads. Returns the content type or an error. */
+    private static function video_upload_checks(object $session, array $payload)
+    {
+        if ($session->submitted_at || ($session->video_uploaded_at && !$session->video_deleted_at)) {
+            return new WP_Error('tme_already_uploaded', self::tr('A video has already been submitted for this estimate.'), array('status' => 409));
+        }
+        if (self::session_is_expired($session)) {
+            return new WP_Error('tme_expired_link', self::tr('This upload link has expired. Please start a new estimate.'), array('status' => 410));
+        }
+        $content_type = strtolower(trim((string) ($payload['contentType'] ?? '')));
+        $content_type = explode(';', $content_type)[0];
+        if (!in_array($content_type, array('video/mp4', 'video/webm', 'video/quicktime'), true)) {
+            return new WP_Error('tme_video_type', self::tr('Please use an MP4, WebM or QuickTime video.'), array('status' => 415));
+        }
+        $size = (int) ($payload['size'] ?? 0);
+        $settings = TME_Plugin::settings();
+        if ($size < 1 || $size > (int) $settings['max_video_mb'] * MB_IN_BYTES) {
+            return new WP_Error('tme_video_size', sprintf(self::tr('The video must be smaller than %d MB.'), (int) $settings['max_video_mb']), array('status' => 413));
+        }
+        return $content_type;
+    }
+
+    private static function video_key(object $session, string $content_type): string
+    {
+        $extension = $content_type === 'video/webm' ? 'webm' : ($content_type === 'video/quicktime' ? 'mov' : 'mp4');
+        return 'sessions/' . $session->id . '/video/' . bin2hex(random_bytes(16)) . '.' . $extension;
+    }
+
+    private static function video_part_count(object $session): int
+    {
+        return max(1, (int) ceil(((int) $session->video_size) / self::VIDEO_PART_BYTES));
+    }
+
+    /** Starts a multipart upload: the browser then sends 8 MB parts and retries any part that fails. */
+    public static function start_video_upload(WP_REST_Request $request)
+    {
+        if (self::rate_limited('presign_video', 25, HOUR_IN_SECONDS)) {
+            return new WP_Error('tme_rate_limit', self::tr('Too many upload attempts. Please try again later.'), array('status' => 429));
+        }
+        $session = TME_DB::get_by_token((string) $request['token']);
+        if (!$session || $session->submission_type !== 'video') {
+            return new WP_Error('tme_not_found', self::tr('Video estimate session not found.'), array('status' => 404));
+        }
+        $payload = $request->get_json_params();
+        $payload = is_array($payload) ? $payload : array();
+        $content_type = self::video_upload_checks($session, $payload);
+        if (is_wp_error($content_type)) {
+            return $content_type;
+        }
+
+        $r2 = new TME_R2();
+        if ($session->pending_video_key && $session->pending_upload_id) {
+            $r2->abort_multipart((string) $session->pending_video_key, (string) $session->pending_upload_id);
+        }
+        $key = self::video_key($session, $content_type);
+        $upload_id = $r2->create_multipart($key, $content_type);
+        if (is_wp_error($upload_id)) {
+            return new WP_Error('tme_upload_start', self::tr('The upload could not be started. Please try again.'), array('status' => 502));
+        }
+        $size = (int) $payload['size'];
+        TME_DB::update($session->id, array(
+            'pending_video_key'  => $key,
+            'pending_upload_id'  => $upload_id,
+            'video_content_type' => $content_type,
+            'video_size'         => $size,
+        ), array('%s', '%s', '%s', '%d'));
+
+        return array(
+            'key'       => $key,
+            'partSize'  => self::VIDEO_PART_BYTES,
+            'partCount' => (int) ceil($size / self::VIDEO_PART_BYTES),
+        );
+    }
+
+    public static function video_part_urls(WP_REST_Request $request)
+    {
+        if (self::rate_limited('presign_video_parts', 400, HOUR_IN_SECONDS)) {
+            return new WP_Error('tme_rate_limit', self::tr('Too many upload attempts. Please try again later.'), array('status' => 429));
+        }
+        $session = TME_DB::get_by_token((string) $request['token']);
+        if (!$session || $session->submission_type !== 'video' || !$session->pending_upload_id || self::session_is_expired($session)) {
+            return new WP_Error('tme_not_found', self::tr('Video estimate session not found.'), array('status' => 404));
+        }
+        $payload = $request->get_json_params();
+        $numbers = is_array($payload) && is_array($payload['parts'] ?? null) ? array_slice($payload['parts'], 0, 10) : array();
+        $count = self::video_part_count($session);
+        $r2 = new TME_R2();
+        $urls = array();
+        foreach ($numbers as $number) {
+            $number = (int) $number;
+            if ($number >= 1 && $number <= $count) {
+                $urls[$number] = $r2->part_url((string) $session->pending_video_key, (string) $session->pending_upload_id, $number);
+            }
+        }
+        if (!$urls) {
+            return new WP_Error('tme_upload_parts', self::tr('The upload could not be verified.'), array('status' => 400));
+        }
+        return array('urls' => $urls);
+    }
+
     public static function upload_url(WP_REST_Request $request)
     {
         if (self::rate_limited('presign_video', 25, HOUR_IN_SECONDS)) {
@@ -266,9 +388,10 @@ final class TME_Public
         $key = 'sessions/' . $session->id . '/video/' . bin2hex(random_bytes(16)) . '.' . $extension;
         TME_DB::update($session->id, array(
             'pending_video_key'  => $key,
+            'pending_upload_id'  => null,
             'video_content_type' => $content_type,
             'video_size'         => $size,
-        ), array('%s', '%s', '%d'));
+        ), array('%s', '%s', '%s', '%d'));
 
         return array(
             'uploadUrl' => (new TME_R2())->upload_url($key),
@@ -364,6 +487,17 @@ final class TME_Public
         }
 
         $r2 = new TME_R2();
+        if ($session->pending_upload_id) {
+            $parts = $r2->list_parts($key, (string) $session->pending_upload_id);
+            if (is_wp_error($parts) || count($parts) < self::video_part_count($session)) {
+                return new WP_Error('tme_upload_missing', self::tr('The upload has not finished yet. Wait a moment and try again.'), array('status' => 409));
+            }
+            $finished = $r2->complete_multipart($key, (string) $session->pending_upload_id, $parts);
+            if (is_wp_error($finished)) {
+                return new WP_Error('tme_upload_missing', self::tr('The upload has not finished yet. Wait a moment and try again.'), array('status' => 409));
+            }
+            TME_DB::update($session->id, array('pending_upload_id' => null), array('%s'));
+        }
         $head = $r2->head($key);
         if (is_wp_error($head)) {
             return new WP_Error('tme_upload_missing', self::tr('The upload has not finished yet. Wait a moment and try again.'), array('status' => 409));

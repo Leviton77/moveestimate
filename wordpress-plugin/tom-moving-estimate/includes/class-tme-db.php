@@ -42,6 +42,9 @@ final class TME_DB
             status varchar(20) NOT NULL DEFAULT 'new',
             video_key varchar(512) NULL,
             pending_video_key varchar(512) NULL,
+            pending_upload_id varchar(255) NULL,
+            form_url varchar(255) NULL,
+            reminder_sent_at datetime NULL,
             video_content_type varchar(100) NULL,
             video_size bigint(20) unsigned NULL,
             video_uploaded_at datetime NULL,
@@ -101,6 +104,7 @@ final class TME_DB
                 'estimated_size'      => $data['estimated_size'],
                 'special_items'       => $data['special_items'],
                 'language'            => $data['language'] ?? 'en',
+                'form_url'            => $data['form_url'] ?? '',
                 'submission_type'     => $data['submission_type'],
                 'submitted_at'        => $data['submitted_at'] ?? null,
                 'photos'              => '[]',
@@ -112,7 +116,7 @@ final class TME_DB
                 'annotations'         => '[]',
                 'rep_notes'           => '',
             ),
-            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
         );
 
         if (!$inserted) {
@@ -187,6 +191,21 @@ final class TME_DB
             $sql = $wpdb->prepare($sql, ...$params);
         }
         return $wpdb->get_results($sql) ?: array();
+    }
+
+    /** Photo or video requests the customer started but never sent, 30 minutes to 1 day old. */
+    public static function unfinished_media_candidates(): array
+    {
+        global $wpdb;
+        $table = self::table();
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT id FROM {$table}
+             WHERE submission_type IN ('photos', 'video')
+             AND submitted_at IS NULL AND video_uploaded_at IS NULL AND reminder_sent_at IS NULL
+             AND created_at <= %s AND created_at > %s",
+            gmdate('Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS),
+            gmdate('Y-m-d H:i:s', time() - DAY_IN_SECONDS)
+        )) ?: array();
     }
 
     public static function retention_candidates(): array
