@@ -25,11 +25,11 @@
 .tme-step strong, .tme-step small { display: block; }
 .tme-step small { color: var(--tme-muted); font-size: .78rem; margin-top: 1px; }
 .tme-choice-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 24px; }
-.tme-choice { appearance: none; background: #fff; border: 2px solid #cbd8d0; border-radius: 14px; color: var(--tme-ink); cursor: pointer; min-height: 150px; padding: 24px; text-align: left; transition: background .15s, border-color .15s, box-shadow .15s, transform .15s; }
+.tme-choice { appearance: none; background: #fff; border: 2px solid #cbd8d0; border-radius: 14px; color: var(--tme-ink); cursor: pointer; min-height: 150px; min-width: 0; padding: 24px; text-align: left; transition: background .15s, border-color .15s, box-shadow .15s, transform .15s; white-space: normal; }
 .tme-choice:hover, .tme-choice:focus-visible { background: #eff8f3; border-color: var(--tme-green); box-shadow: 0 0 0 3px rgba(12, 107, 69, .12); outline: none; }
 .tme-choice:active { transform: translateY(1px); }
 .tme-choice:disabled { cursor: wait; opacity: .6; }
-.tme-choice strong, .tme-choice span { display: block; }
+.tme-choice strong, .tme-choice span { display: block; overflow-wrap: break-word; white-space: normal; }
 .tme-choice strong { color: var(--tme-green-dark); font-size: 1.1rem; margin-bottom: 8px; }
 .tme-choice span { color: var(--tme-muted); font: 400 .88rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .tme label { display: block; margin: 0 0 18px; }
