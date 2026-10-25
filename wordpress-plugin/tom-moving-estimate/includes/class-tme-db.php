@@ -41,6 +41,9 @@ final class TME_DB
             status varchar(20) NOT NULL DEFAULT 'new',
             video_key varchar(512) NULL,
             pending_video_key varchar(512) NULL,
+            pending_upload_id text NULL,
+            language varchar(5) NOT NULL DEFAULT 'en',
+            form_url varchar(255) NULL,
             video_content_type varchar(100) NULL,
             video_size bigint(20) unsigned NULL,
             video_uploaded_at datetime NULL,
@@ -79,6 +82,12 @@ final class TME_DB
         ) {$charset};";
 
         dbDelta($sql);
+        // dbDelta adds new columns but never relaxes NOT NULL on an existing one, so a
+        // table from before the move date became optional would refuse every blank date.
+        $move_date = $wpdb->get_row("SHOW COLUMNS FROM {$table} LIKE 'move_date'");
+        if ($move_date && strtoupper((string) $move_date->Null) === 'NO') {
+            $wpdb->query("ALTER TABLE {$table} MODIFY move_date date NULL");
+        }
         update_option('tme_db_version', TME_VERSION, false);
     }
 
@@ -99,6 +108,8 @@ final class TME_DB
                 'destination_address' => $data['destination_address'],
                 'estimated_size'      => $data['estimated_size'],
                 'special_items'       => $data['special_items'],
+                'language'            => $data['language'] ?? 'en',
+                'form_url'            => $data['form_url'] ?? '',
                 'submission_type'     => $data['submission_type'],
                 'submitted_at'        => $data['submitted_at'] ?? null,
                 'photos'              => '[]',
@@ -110,10 +121,11 @@ final class TME_DB
                 'annotations'         => '[]',
                 'rep_notes'           => '',
             ),
-            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
         );
 
         if (!$inserted) {
+            error_log('Tom Moving Estimate: could not save an estimate: ' . $wpdb->last_error);
             return new WP_Error('tme_database', __('The estimate could not be created.', 'tom-moving-estimate'));
         }
         return self::get((int) $wpdb->insert_id);
@@ -141,7 +153,11 @@ final class TME_DB
         global $wpdb;
         $data['updated_at'] = current_time('mysql', true);
         $formats[] = '%s';
-        return $wpdb->update(self::table(), $data, array('id' => $id), $formats, array('%d')) !== false;
+        $updated = $wpdb->update(self::table(), $data, array('id' => $id), $formats, array('%d')) !== false;
+        if (!$updated) {
+            error_log('Tom Moving Estimate: could not update estimate ' . $id . ': ' . $wpdb->last_error);
+        }
+        return $updated;
     }
 
     public static function delete(int $id): bool

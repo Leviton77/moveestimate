@@ -4,7 +4,7 @@ Tags: moving estimate, photos, video, Cloudflare R2
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.0-rc20
+Stable tag: 1.2.0-rc24
 License: Proprietary
 
 Private moving-estimate information, photo and video submissions, with media hosted on Cloudflare R2 and WordPress rep access.
@@ -123,3 +123,19 @@ A representative can start a guided real-time video call with a customer from Mo
 
 = 1.2.0-rc20 =
 * The video review screen has playback speed buttons under the video: 1×, 1.1×, 1.25×, 1.5× and 2×. Voices keep their normal pitch when sped up, and the speed you pick is remembered for the next video you review in the same browser.
+
+= 1.2.0-rc21 =
+* Brings in the quote form fixes that were made directly on the live site (French form, Continue button, optional move date and destination, "Other" home size, step emails to the office and the delayed customer email).
+* Email and home size are now optional. Required: name, phone, current address and consent.
+* The customer email is sent in the language of the form, and the "didn't finish" email links back to the form so the customer can pick up where they left off. Office emails now show the phone, email and language.
+* Videos upload in 8 MB parts. A part that fails on a weak connection is retried, so one dropped connection no longer loses the whole upload.
+* The estimates list now says "Video not sent yet" or "Upload started, not finished" instead of "Waiting".
+
+= 1.2.0-rc22 =
+* Pages that still use the old [tom_moving_estimate_quick_start] shortcode (for example a homepage built before October 2026) now show the estimate form instead of the raw shortcode text.
+
+= 1.2.0-rc23 =
+* On sites whose estimates table still had the move date as required, the update now makes it optional, so a form sent without a date is saved instead of failing with "The estimate could not be created." If saving ever fails, the database error is written to the PHP error log.
+
+= 1.2.0-rc24 =
+* Fixed video uploads stopping with "Video estimate session not found" after the first try: the storage upload id did not fit its database column, so it was never saved. The column is now large enough, and a failed save stops the upload with a clear message and a line in the PHP error log.

@@ -8,6 +8,8 @@ final class TME_Public
 {
     private const HOME_SIZES = array('Studio', '1 bedroom', '2 bedrooms', '3 bedrooms', '4+ bedrooms', 'House', 'Storage unit', 'Other');
     private const SUBMISSION_TYPES = array('info', 'photos', 'video');
+    /** Video goes up in 8 MB parts; R2 needs at least 5 MB for every part but the last. */
+    private const VIDEO_PART_BYTES = 8 * 1048576;
     private const PHOTO_TYPES = array(
         'image/jpeg' => 'jpg',
         'image/png'  => 'png',
@@ -19,6 +21,9 @@ final class TME_Public
     public static function init(): void
     {
         add_shortcode('tom_moving_estimate', array(__CLASS__, 'shortcode'));
+        // Older pages (e.g. the homepage hero on sites cloned before Oct 2026) still use the
+        // retired quick-start shortcode; show the full form there instead of raw shortcode text.
+        add_shortcode('tom_moving_estimate_quick_start', array(__CLASS__, 'shortcode'));
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
         add_action('tme_send_customer_progress_email', array(__CLASS__, 'send_customer_progress_email'));
     }
@@ -43,6 +48,16 @@ final class TME_Public
         register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/upload-url', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array(__CLASS__, 'upload_url'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/video-upload', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => array(__CLASS__, 'start_video_upload'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/video-parts', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => array(__CLASS__, 'video_part_urls'),
             'permission_callback' => '__return_true',
         ));
         register_rest_route('tme/v1', '/sessions/(?P<token>[a-f0-9]{64})/complete', array(
@@ -84,6 +99,21 @@ final class TME_Public
         return mb_substr(sanitize_text_field((string) $value), 0, $max);
     }
 
+    /** French or English text for a customer-facing message, by the form's language. */
+    private static function pick(string $language, string $en, string $fr): string
+    {
+        return $language === 'fr' ? $fr : $en;
+    }
+
+    /** Keeps the page the form was filled on, so the customer email can link back to it. Other sites are ignored. */
+    private static function same_site_url(string $url): string
+    {
+        $url = esc_url_raw(mb_substr($url, 0, 255));
+        $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+        $home = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+        return ($url !== '' && $host === $home) ? (string) strtok($url, '?#') : '';
+    }
+
     private static function session_is_expired(object $session): bool
     {
         return strtotime($session->created_at . ' UTC') < time() - (7 * DAY_IN_SECONDS);
@@ -109,6 +139,7 @@ final class TME_Public
             return new WP_Error('tme_unavailable', __('Private media storage is being configured. Please try again shortly.', 'tom-moving-estimate'), array('status' => 503));
         }
 
+        $lang = ($payload['language'] ?? '') === 'fr' ? 'fr' : 'en';
         $data = array(
             'client_name'         => self::text($payload['clientName'] ?? '', 120),
             'email'               => sanitize_email((string) ($payload['email'] ?? '')),
@@ -120,25 +151,28 @@ final class TME_Public
             'special_items'       => mb_substr(sanitize_textarea_field((string) ($payload['specialItems'] ?? '')), 0, 2000),
             'submission_type'     => $submission_type,
             'submitted_at'        => $submission_type === 'info' ? current_time('mysql', true) : null,
+            'language'            => $lang,
+            'form_url'            => self::same_site_url((string) ($payload['formUrl'] ?? '')),
         );
 
-        if (in_array('', array($data['client_name'], $data['email'], $data['phone'], $data['current_address'], $data['estimated_size']), true)) {
-            return new WP_Error('tme_required', __('Please complete every required field.', 'tom-moving-estimate'), array('status' => 400));
+        // Email, destination, move date and home size are optional: a phone number is enough to follow up.
+        if (in_array('', array($data['client_name'], $data['phone'], $data['current_address']), true)) {
+            return new WP_Error('tme_required', self::pick($lang, 'Please complete every required field.', 'Veuillez remplir tous les champs obligatoires.'), array('status' => 400));
         }
-        if (!is_email($data['email'])) {
-            return new WP_Error('tme_email', __('Please enter a valid email address.', 'tom-moving-estimate'), array('status' => 400));
+        if ($data['email'] !== '' && !is_email($data['email'])) {
+            return new WP_Error('tme_email', self::pick($lang, 'Please enter a valid email address.', 'Veuillez entrer une adresse courriel valide.'), array('status' => 400));
         }
-        if (!in_array($data['estimated_size'], self::HOME_SIZES, true)) {
-            return new WP_Error('tme_size', __('Please choose a home size.', 'tom-moving-estimate'), array('status' => 400));
+        if ($data['estimated_size'] !== '' && !in_array($data['estimated_size'], self::HOME_SIZES, true)) {
+            return new WP_Error('tme_size', self::pick($lang, 'Please choose a home size.', 'Veuillez choisir la taille du logement.'), array('status' => 400));
         }
         if ($data['move_date'] !== '') {
             $move_timestamp = strtotime($data['move_date'] . ' 12:00:00');
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['move_date']) || !$move_timestamp || $move_timestamp < strtotime('today')) {
-                return new WP_Error('tme_date', __('Please choose a valid future move date.', 'tom-moving-estimate'), array('status' => 400));
+                return new WP_Error('tme_date', self::pick($lang, 'Please choose a valid future move date.', 'Veuillez choisir une date de déménagement future valide.'), array('status' => 400));
             }
         }
         if (empty($payload['consent'])) {
-            return new WP_Error('tme_consent', __('Please confirm how your estimate information and media may be used.', 'tom-moving-estimate'), array('status' => 400));
+            return new WP_Error('tme_consent', self::pick($lang, 'Please confirm how your estimate information and media may be used.', 'Veuillez confirmer l’utilisation de vos renseignements et de vos fichiers.'), array('status' => 400));
         }
 
         $session = TME_DB::create($data);
@@ -220,6 +254,111 @@ final class TME_Public
         );
     }
 
+    /** Checks shared by the single-PUT and multipart video uploads. Returns the content type or an error. */
+    private static function video_upload_checks(object $session, array $payload)
+    {
+        $lang = (string) ($session->language ?? 'en');
+        if ($session->submitted_at || ($session->video_uploaded_at && !$session->video_deleted_at)) {
+            return new WP_Error('tme_already_uploaded', self::pick($lang, 'A video has already been submitted for this estimate.', 'Une vidéo a déjà été envoyée pour cette estimation.'), array('status' => 409));
+        }
+        if (self::session_is_expired($session)) {
+            return new WP_Error('tme_expired_link', self::pick($lang, 'This upload link has expired. Please start a new estimate.', 'Ce lien de téléversement a expiré. Veuillez commencer une nouvelle estimation.'), array('status' => 410));
+        }
+        $content_type = strtolower(trim((string) ($payload['contentType'] ?? '')));
+        $content_type = explode(';', $content_type)[0];
+        if (!in_array($content_type, array('video/mp4', 'video/webm', 'video/quicktime'), true)) {
+            return new WP_Error('tme_video_type', self::pick($lang, 'Please use an MP4, WebM or QuickTime video.', 'Veuillez utiliser une vidéo MP4, WebM ou QuickTime.'), array('status' => 415));
+        }
+        $size = (int) ($payload['size'] ?? 0);
+        $max_mb = (int) TME_Plugin::settings()['max_video_mb'];
+        if ($size < 1 || $size > $max_mb * MB_IN_BYTES) {
+            return new WP_Error('tme_video_size', sprintf(self::pick($lang, 'The video must be smaller than %d MB.', 'La vidéo doit faire moins de %d Mo.'), $max_mb), array('status' => 413));
+        }
+        return $content_type;
+    }
+
+    private static function video_part_count(object $session): int
+    {
+        return max(1, (int) ceil(((int) $session->video_size) / self::VIDEO_PART_BYTES));
+    }
+
+    /** Starts a multipart upload: the browser then sends 8 MB parts and retries any part that fails. */
+    public static function start_video_upload(WP_REST_Request $request)
+    {
+        $session = TME_DB::get_by_token((string) $request['token']);
+        $lang = (string) ($session->language ?? 'en');
+        if (self::rate_limited('presign_video', 25, HOUR_IN_SECONDS)) {
+            return new WP_Error('tme_rate_limit', self::pick($lang, 'Too many upload attempts. Please try again later.', 'Trop de tentatives de téléversement. Veuillez réessayer plus tard.'), array('status' => 429));
+        }
+        if (!$session || $session->submission_type !== 'video') {
+            return new WP_Error('tme_not_found', self::pick($lang, 'Video estimate session not found.', 'Demande d’estimation vidéo introuvable.'), array('status' => 404));
+        }
+        $payload = $request->get_json_params();
+        $payload = is_array($payload) ? $payload : array();
+        $content_type = self::video_upload_checks($session, $payload);
+        if (is_wp_error($content_type)) {
+            return $content_type;
+        }
+
+        $r2 = new TME_R2();
+        if ($session->pending_video_key && $session->pending_upload_id) {
+            $r2->abort_multipart((string) $session->pending_video_key, (string) $session->pending_upload_id);
+        }
+        $extension = $content_type === 'video/webm' ? 'webm' : ($content_type === 'video/quicktime' ? 'mov' : 'mp4');
+        $key = 'sessions/' . $session->id . '/video/' . bin2hex(random_bytes(16)) . '.' . $extension;
+        $upload_id = $r2->create_multipart($key, $content_type);
+        if (is_wp_error($upload_id)) {
+            return new WP_Error('tme_upload_start', self::pick($lang, 'The upload could not be started. Please try again.', 'Le téléversement n’a pas pu démarrer. Veuillez réessayer.'), array('status' => 502));
+        }
+        $size = (int) $payload['size'];
+        $saved = TME_DB::update($session->id, array(
+            'pending_video_key'  => $key,
+            'pending_upload_id'  => $upload_id,
+            'video_content_type' => $content_type,
+            'video_size'         => $size,
+        ), array('%s', '%s', '%s', '%d'));
+        if (!$saved) {
+            $r2->abort_multipart($key, $upload_id);
+            return new WP_Error('tme_upload_start', self::pick($lang, 'The upload could not be started. Please try again.', 'Le téléversement n’a pas pu démarrer. Veuillez réessayer.'), array('status' => 500));
+        }
+
+        return array(
+            'key'       => $key,
+            'partSize'  => self::VIDEO_PART_BYTES,
+            'partCount' => (int) ceil($size / self::VIDEO_PART_BYTES),
+        );
+    }
+
+    /** Signed URLs for up to 10 parts at a time, so a long upload never runs into an expired link. */
+    public static function video_part_urls(WP_REST_Request $request)
+    {
+        $session = TME_DB::get_by_token((string) $request['token']);
+        $lang = (string) ($session->language ?? 'en');
+        if (self::rate_limited('presign_video_parts', 400, HOUR_IN_SECONDS)) {
+            return new WP_Error('tme_rate_limit', self::pick($lang, 'Too many upload attempts. Please try again later.', 'Trop de tentatives de téléversement. Veuillez réessayer plus tard.'), array('status' => 429));
+        }
+        if (!$session || $session->submission_type !== 'video' || !$session->pending_upload_id || self::session_is_expired($session)) {
+            return new WP_Error('tme_not_found', self::pick($lang, 'Video estimate session not found.', 'Demande d’estimation vidéo introuvable.'), array('status' => 404));
+        }
+        $payload = $request->get_json_params();
+        $numbers = is_array($payload) && is_array($payload['parts'] ?? null) ? array_slice($payload['parts'], 0, 10) : array();
+        $count = self::video_part_count($session);
+        $r2 = new TME_R2();
+        $urls = array();
+        foreach ($numbers as $number) {
+            $number = (int) $number;
+            if ($number >= 1 && $number <= $count) {
+                $urls[$number] = $r2->part_url((string) $session->pending_video_key, (string) $session->pending_upload_id, $number);
+            }
+        }
+        if (!$urls) {
+            return new WP_Error('tme_upload_parts', self::pick($lang, 'The upload could not be verified.', 'Le téléversement n’a pas pu être vérifié.'), array('status' => 400));
+        }
+        // A long upload is still progress: push the customer email back so it doesn't say "didn't finish" mid-upload.
+        self::schedule_customer_email($session);
+        return array('urls' => $urls);
+    }
+
     public static function upload_url(WP_REST_Request $request)
     {
         if (self::rate_limited('presign_video', 25, HOUR_IN_SECONDS)) {
@@ -255,9 +394,10 @@ final class TME_Public
         $key = 'sessions/' . $session->id . '/video/' . bin2hex(random_bytes(16)) . '.' . $extension;
         TME_DB::update($session->id, array(
             'pending_video_key'  => $key,
+            'pending_upload_id'  => null,
             'video_content_type' => $content_type,
             'video_size'         => $size,
-        ), array('%s', '%s', '%d'));
+        ), array('%s', '%s', '%s', '%d'));
 
         return array(
             'uploadUrl' => (new TME_R2())->upload_url($key),
@@ -353,6 +493,17 @@ final class TME_Public
         }
 
         $r2 = new TME_R2();
+        if (!empty($session->pending_upload_id)) {
+            $not_finished = new WP_Error('tme_upload_missing', self::pick((string) ($session->language ?? 'en'), 'The upload has not finished yet. Wait a moment and try again.', 'Le téléversement n’est pas encore terminé. Attendez un instant et réessayez.'), array('status' => 409));
+            $parts = $r2->list_parts($key, (string) $session->pending_upload_id);
+            if (is_wp_error($parts) || count($parts) < self::video_part_count($session)) {
+                return $not_finished;
+            }
+            if (is_wp_error($r2->complete_multipart($key, (string) $session->pending_upload_id, $parts))) {
+                return $not_finished;
+            }
+            TME_DB::update($session->id, array('pending_upload_id' => null), array('%s'));
+        }
         $head = $r2->head($key);
         if (is_wp_error($head)) {
             return new WP_Error('tme_upload_missing', __('The upload has not finished yet. Wait a moment and try again.', 'tom-moving-estimate'), array('status' => 409));
@@ -476,7 +627,10 @@ final class TME_Public
         }
 
         $url = admin_url('admin.php?page=tme-estimates&session=' . $session->id);
-        $message = "Customer: {$session->client_name}\nMove date: {$session->move_date}\n";
+        $message = "Customer: {$session->client_name}\nPhone: {$session->phone}\n";
+        $message .= 'Email: ' . ($session->email !== '' ? $session->email : '(not given)') . "\n";
+        $message .= 'Move date: ' . ($session->move_date ?: '(not given)') . "\n";
+        $message .= 'Language: ' . (($session->language ?? 'en') === 'fr' ? 'French' : 'English') . "\n";
 
         if ($step === 1) {
             $message .= "Stage: Contact information submitted.\n";
@@ -518,20 +672,38 @@ final class TME_Public
 
         $settings = TME_Plugin::settings();
         $completed = (bool) ($session->submitted_at || $session->video_uploaded_at);
+        $fr = ($session->language ?? 'en') === 'fr';
+        $days = (int) $settings['retention_days'];
+        $name = $session->client_name;
 
         if ($completed) {
-            $method = $session->submission_type === 'photos' ? 'photos' : ($session->submission_type === 'video' ? 'video walkthrough' : 'moving information');
-            $message = "Hi {$session->client_name},\n\nWe received your moving-estimate request ({$method}). Tom Moving will review it and follow up with you.";
-            $message .= "\n\nYour photos or video are stored privately and automatically deleted after " . (int) $settings['retention_days'] . " days.";
+            $method = $session->submission_type === 'photos'
+                ? 'photos'
+                : ($session->submission_type === 'video' ? ($fr ? 'visite vidéo' : 'video walkthrough') : ($fr ? 'informations de déménagement' : 'moving information'));
+            $message = $fr
+                ? "Bonjour {$name},\n\nNous avons bien reçu votre demande d’estimation ({$method}). Déménagement Tom l’examinera et communiquera avec vous."
+                : "Hi {$name},\n\nWe received your moving-estimate request ({$method}). Tom Moving will review it and follow up with you.";
+            if ($session->submission_type !== 'info') {
+                $message .= $fr
+                    ? "\n\nVos photos ou votre vidéo sont conservées de façon privée et supprimées automatiquement après {$days} jours."
+                    : "\n\nYour photos or video are stored privately and automatically deleted after {$days} days.";
+            }
         } elseif ($session->submission_type !== 'info') {
-            $method = $session->submission_type === 'photos' ? 'photos' : 'a video walkthrough';
-            $message = "Hi {$session->client_name},\n\nWe received your moving information, and it looks like you started adding {$method} but didn't finish. Feel free to return anytime to complete it — your earlier answers are saved.";
+            $method = $session->submission_type === 'photos' ? ($fr ? 'des photos' : 'photos') : ($fr ? 'une visite vidéo' : 'a video walkthrough');
+            $message = $fr
+                ? "Bonjour {$name},\n\nNous avons bien reçu vos informations de déménagement. Vous avez commencé à ajouter {$method}, mais l’envoi ne s’est pas terminé. Vous pouvez revenir le terminer quand vous voulez : vos réponses sont enregistrées."
+                : "Hi {$name},\n\nWe received your moving information, and it looks like you started adding {$method} but didn't finish. Feel free to return anytime to complete it — your earlier answers are saved.";
+            if (!empty($session->form_url)) {
+                $message .= "\n\n" . add_query_arg('session', $session->public_token, $session->form_url);
+            }
         } else {
-            $message = "Hi {$session->client_name},\n\nWe received your moving information. Tom Moving will review it and follow up with you.";
+            $message = $fr
+                ? "Bonjour {$name},\n\nNous avons bien reçu vos informations de déménagement. Déménagement Tom les examinera et communiquera avec vous."
+                : "Hi {$name},\n\nWe received your moving information. Tom Moving will review it and follow up with you.";
         }
-        $message .= "\n\nTom Moving";
+        $message .= $fr ? "\n\nDéménagement Tom" : "\n\nTom Moving";
 
-        wp_mail($session->email, 'We received your moving-estimate request', $message);
+        wp_mail($session->email, $fr ? 'Nous avons bien reçu votre demande d’estimation' : 'We received your moving-estimate request', $message);
     }
 
     private static function detect_language($atts = array()): string
@@ -634,6 +806,9 @@ final class TME_Public
                 'label_video_of' => 'Video',
                 'upload_failed_labeled_mid' => ' upload failed (',
                 'upload_failed_labeled_suffix' => '). Please try again.',
+                'retrying_part_prefix' => 'Connection lost. Retrying part ',
+                'retrying_part_mid' => ' of ',
+                'retrying_part_suffix' => '...',
             );
         }
 
@@ -695,6 +870,9 @@ final class TME_Public
             'label_video_of' => 'de la vidéo',
             'upload_failed_labeled_mid' => ' a échoué (',
             'upload_failed_labeled_suffix' => '). Veuillez réessayer.',
+            'retrying_part_prefix' => 'Connexion perdue. Nouvel essai de la partie ',
+            'retrying_part_mid' => ' sur ',
+            'retrying_part_suffix' => '...',
         );
     }
 
@@ -748,14 +926,14 @@ final class TME_Public
                 <form data-tme-form>
                     <div class="tme-grid">
                         <label><span><?php echo $is_fr ? 'Nom complet *' : 'Full name *'; ?></span><input name="clientName" autocomplete="name" maxlength="120" required></label>
-                        <label><span><?php echo $is_fr ? 'Courriel *' : 'Email *'; ?></span><input name="email" type="email" autocomplete="email" maxlength="190" required></label>
+                        <label><span><?php echo $is_fr ? 'Courriel' : 'Email'; ?></span><input name="email" type="email" autocomplete="email" maxlength="190"></label>
                         <label><span><?php echo $is_fr ? 'Téléphone *' : 'Phone *'; ?></span><input name="phone" type="tel" autocomplete="tel" maxlength="40" required></label>
                         <label><span><?php echo $is_fr ? 'Date du déménagement' : 'Move date'; ?></span><input name="moveDate" type="date" min="<?php echo esc_attr(wp_date('Y-m-d')); ?>"></label>
                     </div>
                     <div class="tme-form-more" data-tme-form-more hidden>
                         <label><span><?php echo $is_fr ? 'Adresse actuelle *' : 'Current address *'; ?></span><input name="currentAddress" autocomplete="street-address" maxlength="255" required></label>
                         <label><span><?php echo $is_fr ? 'Adresse de destination' : 'Destination address'; ?></span><input name="destinationAddress" maxlength="255"></label>
-                        <label><span><?php echo $is_fr ? 'Taille estimée du logement *' : 'Estimated home size *'; ?></span><select name="estimatedSize" required><option value=""><?php echo $is_fr ? 'Sélectionnez la taille du logement' : 'Select home size'; ?></option><?php foreach (self::HOME_SIZES as $size) : ?><option value="<?php echo esc_attr($size); ?>"><?php echo esc_html(self::home_size_label($size, $is_fr)); ?></option><?php endforeach; ?></select></label>
+                        <label><span><?php echo $is_fr ? 'Taille estimée du logement' : 'Estimated home size'; ?></span><select name="estimatedSize"><option value=""><?php echo $is_fr ? 'Sélectionnez la taille du logement' : 'Select home size'; ?></option><?php foreach (self::HOME_SIZES as $size) : ?><option value="<?php echo esc_attr($size); ?>"><?php echo esc_html(self::home_size_label($size, $is_fr)); ?></option><?php endforeach; ?></select></label>
                         <label><span><?php echo $is_fr ? 'Objets spéciaux ou notes' : 'Special items or notes'; ?></span><textarea name="specialItems" rows="4" maxlength="2000" placeholder="<?php echo esc_attr($is_fr ? 'Piano, antiquités, espaces de rangement, escaliers, détails sur l’ascenseur, objets qui ne déménagent pas...' : 'Piano, antiques, storage areas, stairs, elevator details, items that are not moving...'); ?>"></textarea></label>
                         <label class="tme-honeypot" aria-hidden="true"><?php echo $is_fr ? 'Site web' : 'Website'; ?><input name="website" tabindex="-1" autocomplete="off"></label>
                         <label class="tme-consent"><input name="consent" type="checkbox" value="1" required><span><?php echo $is_fr

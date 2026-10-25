@@ -196,7 +196,9 @@ final class TME_Admin
                 return '<span class="tme-video-state tme-video-state--deleted">Photos deleted</span>';
             }
             if (!$session->submitted_at) {
-                return '<span class="tme-video-state">Waiting for photos</span>';
+                return TME_DB::photos($session, true)
+                    ? '<span class="tme-video-state tme-video-state--warning">Upload started, not finished</span>'
+                    : '<span class="tme-video-state">Photos not sent yet</span>';
             }
             $days = max(0, (int) ceil((strtotime($session->media_expires_at . ' UTC') - time()) / DAY_IN_SECONDS));
             $class = $days <= 3 ? ' tme-video-state--warning' : ' tme-video-state--ready';
@@ -212,7 +214,12 @@ final class TME_Admin
             return '<span class="tme-video-state tme-video-state--deleted">Deleted</span>';
         }
         if (!$session->video_uploaded_at) {
-            return '<span class="tme-video-state">Waiting</span>';
+            if ($session->submission_type === 'live') {
+                return '<span class="tme-video-state">Waiting</span>';
+            }
+            return $session->pending_video_key
+                ? '<span class="tme-video-state tme-video-state--warning">Upload started, not finished</span>'
+                : '<span class="tme-video-state">Video not sent yet</span>';
         }
         $days = max(0, (int) ceil((strtotime($session->video_expires_at . ' UTC') - time()) / DAY_IN_SECONDS));
         $class = $days <= 3 ? ' tme-video-state--warning' : ' tme-video-state--ready';
