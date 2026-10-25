@@ -4,7 +4,7 @@ Tags: moving estimate, photos, video, Cloudflare R2
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.0-rc22
+Stable tag: 1.2.0-rc23
 License: Proprietary
 
 Private moving-estimate information, photo and video submissions, with media hosted on Cloudflare R2 and WordPress rep access.
@@ -133,3 +133,6 @@ A representative can start a guided real-time video call with a customer from Mo
 
 = 1.2.0-rc22 =
 * Pages that still use the old [tom_moving_estimate_quick_start] shortcode (for example a homepage built before October 2026) now show the estimate form instead of the raw shortcode text.
+
+= 1.2.0-rc23 =
+* On sites whose estimates table still had the move date as required, the update now makes it optional, so a form sent without a date is saved instead of failing with "The estimate could not be created." If saving ever fails, the database error is written to the PHP error log.

@@ -82,6 +82,12 @@ final class TME_DB
         ) {$charset};";
 
         dbDelta($sql);
+        // dbDelta adds new columns but never relaxes NOT NULL on an existing one, so a
+        // table from before the move date became optional would refuse every blank date.
+        $move_date = $wpdb->get_row("SHOW COLUMNS FROM {$table} LIKE 'move_date'");
+        if ($move_date && strtoupper((string) $move_date->Null) === 'NO') {
+            $wpdb->query("ALTER TABLE {$table} MODIFY move_date date NULL");
+        }
         update_option('tme_db_version', TME_VERSION, false);
     }
 
@@ -119,6 +125,7 @@ final class TME_DB
         );
 
         if (!$inserted) {
+            error_log('Tom Moving Estimate: could not save an estimate: ' . $wpdb->last_error);
             return new WP_Error('tme_database', __('The estimate could not be created.', 'tom-moving-estimate'));
         }
         return self::get((int) $wpdb->insert_id);
