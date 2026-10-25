@@ -41,6 +41,9 @@ final class TME_DB
             status varchar(20) NOT NULL DEFAULT 'new',
             video_key varchar(512) NULL,
             pending_video_key varchar(512) NULL,
+            pending_upload_id varchar(255) NULL,
+            language varchar(5) NOT NULL DEFAULT 'en',
+            form_url varchar(255) NULL,
             video_content_type varchar(100) NULL,
             video_size bigint(20) unsigned NULL,
             video_uploaded_at datetime NULL,
@@ -99,6 +102,8 @@ final class TME_DB
                 'destination_address' => $data['destination_address'],
                 'estimated_size'      => $data['estimated_size'],
                 'special_items'       => $data['special_items'],
+                'language'            => $data['language'] ?? 'en',
+                'form_url'            => $data['form_url'] ?? '',
                 'submission_type'     => $data['submission_type'],
                 'submitted_at'        => $data['submitted_at'] ?? null,
                 'photos'              => '[]',
@@ -110,7 +115,7 @@ final class TME_DB
                 'annotations'         => '[]',
                 'rep_notes'           => '',
             ),
-            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
         );
 
         if (!$inserted) {

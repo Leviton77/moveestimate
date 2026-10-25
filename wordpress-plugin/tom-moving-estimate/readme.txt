@@ -4,7 +4,7 @@ Tags: moving estimate, photos, video, Cloudflare R2
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.0-rc20
+Stable tag: 1.2.0-rc21
 License: Proprietary
 
 Private moving-estimate information, photo and video submissions, with media hosted on Cloudflare R2 and WordPress rep access.
@@ -123,3 +123,10 @@ A representative can start a guided real-time video call with a customer from Mo
 
 = 1.2.0-rc20 =
 * The video review screen has playback speed buttons under the video: 1×, 1.1×, 1.25×, 1.5× and 2×. Voices keep their normal pitch when sped up, and the speed you pick is remembered for the next video you review in the same browser.
+
+= 1.2.0-rc21 =
+* Brings in the quote form fixes that were made directly on the live site (French form, Continue button, optional move date and destination, "Other" home size, step emails to the office and the delayed customer email).
+* Email and home size are now optional. Required: name, phone, current address and consent.
+* The customer email is sent in the language of the form, and the "didn't finish" email links back to the form so the customer can pick up where they left off. Office emails now show the phone, email and language.
+* Videos upload in 8 MB parts. A part that fails on a weak connection is retried, so one dropped connection no longer loses the whole upload.
+* The estimates list now says "Video not sent yet" or "Upload started, not finished" instead of "Waiting".
