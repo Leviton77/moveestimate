@@ -21,6 +21,9 @@ final class TME_Public
     public static function init(): void
     {
         add_shortcode('tom_moving_estimate', array(__CLASS__, 'shortcode'));
+        // Older pages (e.g. the homepage hero on sites cloned before Oct 2026) still use the
+        // retired quick-start shortcode; show the full form there instead of raw shortcode text.
+        add_shortcode('tom_moving_estimate_quick_start', array(__CLASS__, 'shortcode'));
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
         add_action('tme_send_customer_progress_email', array(__CLASS__, 'send_customer_progress_email'));
     }
