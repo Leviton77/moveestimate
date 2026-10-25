@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 final class TME_Public
 {
-    private const HOME_SIZES = array('Studio', '1 bedroom', '2 bedrooms', '3 bedrooms', '4+ bedrooms', 'House', 'Storage unit');
+    private const HOME_SIZES = array('Studio', '1 bedroom', '2 bedrooms', '3 bedrooms', '4+ bedrooms', 'House', 'Storage unit', 'Other');
     private const SUBMISSION_TYPES = array('info', 'photos', 'video');
     private const PHOTO_TYPES = array(
         'image/jpeg' => 'jpg',
@@ -20,6 +20,7 @@ final class TME_Public
     {
         add_shortcode('tom_moving_estimate', array(__CLASS__, 'shortcode'));
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
+        add_action('tme_send_customer_progress_email', array(__CLASS__, 'send_customer_progress_email'));
     }
 
     public static function register_routes(): void
@@ -121,7 +122,7 @@ final class TME_Public
             'submitted_at'        => $submission_type === 'info' ? current_time('mysql', true) : null,
         );
 
-        if (in_array('', array($data['client_name'], $data['email'], $data['phone'], $data['move_date'], $data['current_address'], $data['destination_address'], $data['estimated_size']), true)) {
+        if (in_array('', array($data['client_name'], $data['email'], $data['phone'], $data['current_address'], $data['estimated_size']), true)) {
             return new WP_Error('tme_required', __('Please complete every required field.', 'tom-moving-estimate'), array('status' => 400));
         }
         if (!is_email($data['email'])) {
@@ -130,9 +131,11 @@ final class TME_Public
         if (!in_array($data['estimated_size'], self::HOME_SIZES, true)) {
             return new WP_Error('tme_size', __('Please choose a home size.', 'tom-moving-estimate'), array('status' => 400));
         }
-        $move_timestamp = strtotime($data['move_date'] . ' 12:00:00');
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['move_date']) || !$move_timestamp || $move_timestamp < strtotime('today')) {
-            return new WP_Error('tme_date', __('Please choose a valid future move date.', 'tom-moving-estimate'), array('status' => 400));
+        if ($data['move_date'] !== '') {
+            $move_timestamp = strtotime($data['move_date'] . ' 12:00:00');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['move_date']) || !$move_timestamp || $move_timestamp < strtotime('today')) {
+                return new WP_Error('tme_date', __('Please choose a valid future move date.', 'tom-moving-estimate'), array('status' => 400));
+            }
         }
         if (empty($payload['consent'])) {
             return new WP_Error('tme_consent', __('Please confirm how your estimate information and media may be used.', 'tom-moving-estimate'), array('status' => 400));
@@ -143,7 +146,8 @@ final class TME_Public
             return $session;
         }
         if ($submission_type === 'info') {
-            self::send_submission_notifications($session);
+            self::send_admin_step_notification($session, 1);
+            self::schedule_customer_email($session);
         }
 
         return new WP_REST_Response(array(
@@ -205,6 +209,10 @@ final class TME_Public
         if (!$updated) {
             return new WP_Error('tme_submission_update', __('The media walkthrough could not be started. Please try again.', 'tom-moving-estimate'), array('status' => 500));
         }
+
+        $session->submission_type = $submission_type;
+        self::send_admin_step_notification($session, 2);
+        self::schedule_customer_email($session);
 
         return array(
             'clientName'     => $session->client_name,
@@ -375,7 +383,8 @@ final class TME_Public
             'status'                => 'new',
         ), array('%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'));
         TME_Retention::schedule_for_session((int) $session->id, $uploaded);
-        self::send_submission_notifications($session, $expires);
+        self::send_admin_step_notification($session, 3, $expires);
+        self::schedule_customer_email($session);
 
         return array('ok' => true);
     }
@@ -452,43 +461,250 @@ final class TME_Public
             'status'                  => 'new',
         ), array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'));
         TME_Retention::schedule_for_session((int) $session->id, $uploaded);
-        self::send_submission_notifications($session, $expires, count($verified));
+        self::send_admin_step_notification($session, 3, $expires, count($verified));
+        self::schedule_customer_email($session);
 
         return array('ok' => true, 'photoCount' => count($verified));
     }
 
-    private static function send_submission_notifications(object $session, ?int $expires = null, int $photo_count = 0): void
+    private static function send_admin_step_notification(object $session, int $step, ?int $expires = null, int $photo_count = 0): void
     {
         $settings = TME_Plugin::settings();
         $admin_email = sanitize_email((string) $settings['notification_email']);
-        $method = $session->submission_type === 'photos'
-            ? sprintf('%d photo%s', $photo_count, $photo_count === 1 ? '' : 's')
-            : ($session->submission_type === 'video' ? 'video walkthrough' : 'moving information');
-        if ($admin_email) {
-            $url = admin_url('admin.php?page=tme-estimates&session=' . $session->id);
-            $message = "A new moving-estimate request is ready.\n\n";
-            $message .= "Customer: {$session->client_name}\nMove date: {$session->move_date}\nSubmission: {$method}\n";
-            $message .= "Review: {$url}\n";
+        if (!$admin_email) {
+            return;
+        }
+
+        $url = admin_url('admin.php?page=tme-estimates&session=' . $session->id);
+        $message = "Customer: {$session->client_name}\nMove date: {$session->move_date}\n";
+
+        if ($step === 1) {
+            $message .= "Stage: Contact information submitted.\n";
+        } elseif ($step === 2) {
+            $method = $session->submission_type === 'photos' ? 'photo walkthrough' : 'video walkthrough';
+            $message .= "Stage: Chose to continue with a {$method} (not yet uploaded).\n";
+        } else {
+            $method = $session->submission_type === 'photos'
+                ? sprintf('%d photo%s', $photo_count, $photo_count === 1 ? '' : 's')
+                : 'video walkthrough';
+            $message .= "Stage: Completed submission ({$method}).\n";
             if ($expires) {
                 $message .= "Automatic media deletion: " . gmdate('F j, Y', $expires) . "\n";
             }
-            wp_mail($admin_email, 'New estimate request: ' . $session->client_name, $message);
         }
 
-        if (is_email($session->email)) {
-            $message = "Hi {$session->client_name},\n\nWe received your moving-estimate request ({$method}). Tom Moving will review it and follow up with you.";
-            if ($expires) {
-                $message .= "\n\nYour photos or video are stored privately and automatically deleted after " . (int) $settings['retention_days'] . " days.";
-            }
-            $message .= "\n\nTom Moving";
-            wp_mail($session->email, 'We received your moving-estimate request', $message);
-        }
+        $message .= "Review: {$url}\n";
+        $subject = sprintf('Site form lead %s - Step %d', $session->client_name, $step);
+        wp_mail($admin_email, $subject, $message);
     }
 
-    public static function shortcode(): string
+    private static function schedule_customer_email(object $session): void
+    {
+        $hook = 'tme_send_customer_progress_email';
+        $args = array((int) $session->id);
+        $existing = wp_next_scheduled($hook, $args);
+        if ($existing) {
+            wp_unschedule_event($existing, $hook, $args);
+        }
+        wp_schedule_single_event(time() + (15 * MINUTE_IN_SECONDS), $hook, $args);
+    }
+
+    public static function send_customer_progress_email(int $session_id): void
+    {
+        $session = TME_DB::get($session_id);
+        if (!$session || !is_email($session->email)) {
+            return;
+        }
+
+        $settings = TME_Plugin::settings();
+        $completed = (bool) ($session->submitted_at || $session->video_uploaded_at);
+
+        if ($completed) {
+            $method = $session->submission_type === 'photos' ? 'photos' : ($session->submission_type === 'video' ? 'video walkthrough' : 'moving information');
+            $message = "Hi {$session->client_name},\n\nWe received your moving-estimate request ({$method}). Tom Moving will review it and follow up with you.";
+            $message .= "\n\nYour photos or video are stored privately and automatically deleted after " . (int) $settings['retention_days'] . " days.";
+        } elseif ($session->submission_type !== 'info') {
+            $method = $session->submission_type === 'photos' ? 'photos' : 'a video walkthrough';
+            $message = "Hi {$session->client_name},\n\nWe received your moving information, and it looks like you started adding {$method} but didn't finish. Feel free to return anytime to complete it — your earlier answers are saved.";
+        } else {
+            $message = "Hi {$session->client_name},\n\nWe received your moving information. Tom Moving will review it and follow up with you.";
+        }
+        $message .= "\n\nTom Moving";
+
+        wp_mail($session->email, 'We received your moving-estimate request', $message);
+    }
+
+    private static function detect_language($atts = array()): string
+    {
+        $atts = is_array($atts) ? $atts : array();
+        $requested = isset($atts['lang']) ? strtolower(sanitize_key((string) $atts['lang'])) : '';
+        if (in_array($requested, array('en', 'fr'), true)) {
+            return $requested;
+        }
+
+        if (function_exists('pll_current_language')) {
+            $polylang = strtolower((string) pll_current_language('slug'));
+            if (in_array($polylang, array('en', 'fr'), true)) {
+                return $polylang;
+            }
+        }
+
+        $path = strtolower((string) wp_parse_url(wp_unslash($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH));
+        return preg_match('#(^|/)fr(/|$)#', $path) ? 'fr' : 'en';
+    }
+
+    private static function home_size_label(string $size, bool $is_fr): string
+    {
+        if (!$is_fr) {
+            return $size;
+        }
+
+        $labels = array(
+            'Studio'       => 'Studio',
+            '1 bedroom'    => '1 chambre',
+            '2 bedrooms'   => '2 chambres',
+            '3 bedrooms'   => '3 chambres',
+            '4+ bedrooms'  => '4 chambres ou plus',
+            'House'        => 'Maison',
+            'Storage unit' => 'Unité d’entreposage',
+            'Other'        => 'Autre',
+        );
+
+        return $labels[$size] ?? $size;
+    }
+
+    private static function i18n_strings(bool $is_fr): array
+    {
+        if (!$is_fr) {
+            return array(
+                'generic_error' => 'Something went wrong. Please try again.',
+                'network_error' => 'The browser could not reach private media storage. Check your connection and try again.',
+                'done_photos' => 'Your photos were uploaded securely. Tom Moving will review them and follow up with you.',
+                'done_video' => 'Your video walkthrough was uploaded securely. Tom Moving will review it and follow up with you.',
+                'done_info' => 'Your moving information was received. Tom Moving will review it and follow up with you.',
+                'thank_you_prefix' => 'Thank you, ',
+                'thank_you_suffix' => '!',
+                'fallback_there' => 'there',
+                'choose_type_error' => 'The media walkthrough could not be started. Please try again.',
+                'max_photos_prefix' => 'You can submit up to ',
+                'max_photos_suffix' => ' photos.',
+                'invalid_photo_type' => 'Please choose JPEG, PNG, WebP, HEIC or HEIF photos.',
+                'photo_too_large_prefix' => 'Each photo must be smaller than ',
+                'photo_too_large_suffix' => ' MB.',
+                'selected_photo_alt_prefix' => 'Selected photo ',
+                'photo_fallback_name_prefix' => 'Photo ',
+                'remove_label' => 'Remove',
+                'remove_aria_prefix' => 'Remove ',
+                'photo_count_mid' => ' of ',
+                'photo_count_suffix' => ' photos',
+                'preparing_photo_prefix' => 'Preparing photo ',
+                'preparing_photo_mid' => ' of ',
+                'preparing_photo_suffix' => '...',
+                'uploading_photo_prefix' => 'Uploading photo ',
+                'uploading_photo_mid' => ' of ',
+                'uploading_photo_mid2' => '... ',
+                'uploading_photo_suffix' => '%',
+                'verifying_photos' => 'Verifying photos...',
+                'photos_submit_error' => 'The photos could not be submitted. Please try again.',
+                'help_preview' => 'Hold your phone horizontally when possible, then walk at a comfortable pace.',
+                'help_review' => 'Review your walkthrough before sending it.',
+                'unsupported_browser' => 'This browser cannot record directly. Choose an existing video instead, or use the current Safari, Chrome or Edge browser.',
+                'camera_blocked' => 'Camera or microphone access was blocked. Allow access in your browser settings, then try again. You can also choose an existing video.',
+                'recording_error' => 'Recording stopped unexpectedly. Please try again.',
+                'no_video_captured' => 'No video was captured. Please try again.',
+                'recording_too_large_prefix' => 'This recording is larger than ',
+                'recording_too_large_suffix' => ' MB. Please retake a shorter walkthrough.',
+                'recording_time_prefix' => 'Recording ',
+                'recording_time_suffix' => ' - maximum 15:00',
+                'recorder_start_error' => 'This browser could not start the recorder. Try the current Safari, Chrome or Edge browser.',
+                'video_too_large_prefix' => 'This video is larger than ',
+                'video_too_large_suffix' => ' MB. Please choose or record a shorter video.',
+                'invalid_video_type' => 'Please choose an MP4, WebM or QuickTime video.',
+                'video_too_long' => 'The video is longer than 15 minutes. Please choose or record a shorter walkthrough.',
+                'preparing_upload' => 'Preparing secure upload...',
+                'uploading_securely_prefix' => 'Uploading securely... ',
+                'uploading_securely_suffix' => '%',
+                'verifying_upload' => 'Verifying upload...',
+                'upload_failed' => 'Upload failed. Please try again.',
+                'submitting_label' => 'Submitting...',
+                'estimate_start_error' => 'The estimate could not be started. Please try again.',
+                'upload_failed_labeled_prefix' => '',
+                'label_file_of' => 'File',
+                'label_photo_of' => 'Photo',
+                'label_video_of' => 'Video',
+                'upload_failed_labeled_mid' => ' upload failed (',
+                'upload_failed_labeled_suffix' => '). Please try again.',
+            );
+        }
+
+        return array(
+            'generic_error' => 'Une erreur est survenue. Veuillez réessayer.',
+            'network_error' => 'Le navigateur n’a pas pu joindre le stockage privé des médias. Vérifiez votre connexion et réessayez.',
+            'done_photos' => 'Vos photos ont été téléversées en toute sécurité. Déménagement Tom les examinera et communiquera avec vous.',
+            'done_video' => 'Votre visite vidéo a été téléversée en toute sécurité. Déménagement Tom l’examinera et communiquera avec vous.',
+            'done_info' => 'Vos informations de déménagement ont été reçues. Déménagement Tom les examinera et communiquera avec vous.',
+            'thank_you_prefix' => 'Merci, ',
+            'thank_you_suffix' => '!',
+            'fallback_there' => 'vous',
+            'choose_type_error' => 'La visite multimédia n’a pas pu démarrer. Veuillez réessayer.',
+            'max_photos_prefix' => 'Vous pouvez soumettre jusqu’à ',
+            'max_photos_suffix' => ' photos.',
+            'invalid_photo_type' => 'Veuillez choisir des photos JPEG, PNG, WebP, HEIC ou HEIF.',
+            'photo_too_large_prefix' => 'Chaque photo doit être plus petite que ',
+            'photo_too_large_suffix' => ' Mo.',
+            'selected_photo_alt_prefix' => 'Photo sélectionnée ',
+            'photo_fallback_name_prefix' => 'Photo ',
+            'remove_label' => 'Retirer',
+            'remove_aria_prefix' => 'Retirer ',
+            'photo_count_mid' => ' sur ',
+            'photo_count_suffix' => ' photos',
+            'preparing_photo_prefix' => 'Préparation de la photo ',
+            'preparing_photo_mid' => ' sur ',
+            'preparing_photo_suffix' => '...',
+            'uploading_photo_prefix' => 'Téléversement de la photo ',
+            'uploading_photo_mid' => ' sur ',
+            'uploading_photo_mid2' => '... ',
+            'uploading_photo_suffix' => ' %',
+            'verifying_photos' => 'Vérification des photos...',
+            'photos_submit_error' => 'Les photos n’ont pas pu être soumises. Veuillez réessayer.',
+            'help_preview' => 'Tenez votre téléphone à l’horizontale lorsque possible, puis marchez à un rythme confortable.',
+            'help_review' => 'Révisez votre visite avant de l’envoyer.',
+            'unsupported_browser' => 'Ce navigateur ne peut pas enregistrer directement. Choisissez une vidéo existante, ou utilisez une version récente de Safari, Chrome ou Edge.',
+            'camera_blocked' => 'L’accès à la caméra ou au microphone a été bloqué. Autorisez l’accès dans les réglages de votre navigateur, puis réessayez. Vous pouvez aussi choisir une vidéo existante.',
+            'recording_error' => 'L’enregistrement s’est arrêté de façon inattendue. Veuillez réessayer.',
+            'no_video_captured' => 'Aucune vidéo n’a été captée. Veuillez réessayer.',
+            'recording_too_large_prefix' => 'Cet enregistrement dépasse ',
+            'recording_too_large_suffix' => ' Mo. Veuillez reprendre une visite plus courte.',
+            'recording_time_prefix' => 'Enregistrement ',
+            'recording_time_suffix' => ' - maximum 15:00',
+            'recorder_start_error' => 'Ce navigateur n’a pas pu démarrer l’enregistreur. Essayez une version récente de Safari, Chrome ou Edge.',
+            'video_too_large_prefix' => 'Cette vidéo dépasse ',
+            'video_too_large_suffix' => ' Mo. Veuillez choisir ou enregistrer une vidéo plus courte.',
+            'invalid_video_type' => 'Veuillez choisir une vidéo MP4, WebM ou QuickTime.',
+            'video_too_long' => 'La vidéo dépasse 15 minutes. Veuillez choisir ou enregistrer une visite plus courte.',
+            'preparing_upload' => 'Préparation du téléversement sécurisé...',
+            'uploading_securely_prefix' => 'Téléversement sécurisé... ',
+            'uploading_securely_suffix' => ' %',
+            'verifying_upload' => 'Vérification du téléversement...',
+            'upload_failed' => 'Le téléversement a échoué. Veuillez réessayer.',
+            'submitting_label' => 'Envoi en cours...',
+            'estimate_start_error' => 'L’estimation n’a pas pu démarrer. Veuillez réessayer.',
+            'upload_failed_labeled_prefix' => 'Le téléversement ',
+            'label_file_of' => 'du fichier',
+            'label_photo_of' => 'de la photo',
+            'label_video_of' => 'de la vidéo',
+            'upload_failed_labeled_mid' => ' a échoué (',
+            'upload_failed_labeled_suffix' => '). Veuillez réessayer.',
+        );
+    }
+
+    public static function shortcode($atts = array()): string
     {
         wp_enqueue_style('tme-public', TME_URL . 'assets/css/public.css', array(), TME_VERSION);
         wp_enqueue_script('tme-public', TME_URL . 'assets/js/public.js', array(), TME_VERSION, true);
+
+        $language = self::detect_language($atts);
+        $is_fr = $language === 'fr';
 
         $token = isset($_GET['session']) ? strtolower(sanitize_text_field(wp_unslash($_GET['session']))) : '';
         $session = $token ? TME_DB::get_by_token($token) : null;
@@ -505,6 +721,8 @@ final class TME_Public
             'restUrl'       => esc_url_raw(rest_url('tme/v1/')),
             'estimateUrl'   => esc_url_raw(get_permalink()),
             'initial'       => $initial,
+            'locale'        => $language,
+            'i18n'          => self::i18n_strings($is_fr),
             'maxSeconds'    => 15 * MINUTE_IN_SECONDS,
             'maxBytes'      => (int) $settings['max_video_mb'] * MB_IN_BYTES,
             'maxMb'         => (int) $settings['max_video_mb'],
@@ -516,100 +734,112 @@ final class TME_Public
 
         ob_start();
         ?>
-        <div class="tme" data-tme-app>
+        <div class="tme" data-tme-app data-language="<?php echo esc_attr($language); ?>">
             <section class="tme-intro">
                 <p class="tme-eyebrow">Tom Moving</p>
-                <h1>Request your moving estimate</h1>
-                <p>Tell us about your move first. After your information is saved, you can add photos or record a guided video walkthrough.</p>
+                <h1><?php echo $is_fr ? 'Demandez votre estimation de déménagement' : 'Request your moving estimate'; ?></h1>
+                <p><?php echo $is_fr ? 'Parlez-nous d’abord de votre déménagement. Une fois vos informations enregistrées, vous pourrez ajouter des photos ou enregistrer une visite vidéo guidée.' : 'Tell us about your move first. After your information is saved, you can add photos or record a guided video walkthrough.'; ?></p>
             </section>
 
             <div class="tme-alert" data-tme-alert role="alert" hidden></div>
 
             <section class="tme-card" data-tme-form-view <?php echo $session ? 'hidden' : ''; ?>>
-                <div class="tme-step"><span>1</span><div><strong>Your moving information</strong><small>Please complete every required field</small></div></div>
+                <div class="tme-step"><span>1</span><div><strong><?php echo $is_fr ? 'Vos informations de déménagement' : 'Your moving information'; ?></strong><small><?php echo $is_fr ? 'Veuillez remplir tous les champs obligatoires' : 'Please complete every required field'; ?></small></div></div>
                 <form data-tme-form>
                     <div class="tme-grid">
-                        <label><span>Full name *</span><input name="clientName" autocomplete="name" maxlength="120" required></label>
-                        <label><span>Email *</span><input name="email" type="email" autocomplete="email" maxlength="190" required></label>
-                        <label><span>Phone *</span><input name="phone" type="tel" autocomplete="tel" maxlength="40" required></label>
-                        <label><span>Move date *</span><input name="moveDate" type="date" min="<?php echo esc_attr(wp_date('Y-m-d')); ?>" required></label>
+                        <label><span><?php echo $is_fr ? 'Nom complet *' : 'Full name *'; ?></span><input name="clientName" autocomplete="name" maxlength="120" required></label>
+                        <label><span><?php echo $is_fr ? 'Courriel *' : 'Email *'; ?></span><input name="email" type="email" autocomplete="email" maxlength="190" required></label>
+                        <label><span><?php echo $is_fr ? 'Téléphone *' : 'Phone *'; ?></span><input name="phone" type="tel" autocomplete="tel" maxlength="40" required></label>
+                        <label><span><?php echo $is_fr ? 'Date du déménagement' : 'Move date'; ?></span><input name="moveDate" type="date" min="<?php echo esc_attr(wp_date('Y-m-d')); ?>"></label>
                     </div>
-                    <label><span>Current address *</span><input name="currentAddress" autocomplete="street-address" maxlength="255" required></label>
-                    <label><span>Destination address *</span><input name="destinationAddress" maxlength="255" required></label>
-                    <label><span>Estimated home size *</span><select name="estimatedSize" required><option value="">Select home size</option><?php foreach (self::HOME_SIZES as $size) : ?><option value="<?php echo esc_attr($size); ?>"><?php echo esc_html($size); ?></option><?php endforeach; ?></select></label>
-                    <label><span>Special items or notes</span><textarea name="specialItems" rows="4" maxlength="2000" placeholder="Piano, antiques, storage areas, stairs, elevator details, items that are not moving..."></textarea></label>
-                    <label class="tme-honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
-                    <label class="tme-consent"><input name="consent" type="checkbox" value="1" required><span>I agree that Tom Moving may use this information to prepare my estimate. If I add photos or video, the files will be stored privately and automatically deleted after <?php echo esc_html((string) $settings['retention_days']); ?> days.</span></label>
-                    <button class="tme-button tme-button--primary tme-button--wide" type="submit" data-tme-form-submit>Continue</button>
-                    <p class="tme-footnote">Your submission is used only to prepare your moving estimate.</p>
+                    <div class="tme-form-more" data-tme-form-more hidden>
+                        <label><span><?php echo $is_fr ? 'Adresse actuelle *' : 'Current address *'; ?></span><input name="currentAddress" autocomplete="street-address" maxlength="255" required></label>
+                        <label><span><?php echo $is_fr ? 'Adresse de destination' : 'Destination address'; ?></span><input name="destinationAddress" maxlength="255"></label>
+                        <label><span><?php echo $is_fr ? 'Taille estimée du logement *' : 'Estimated home size *'; ?></span><select name="estimatedSize" required><option value=""><?php echo $is_fr ? 'Sélectionnez la taille du logement' : 'Select home size'; ?></option><?php foreach (self::HOME_SIZES as $size) : ?><option value="<?php echo esc_attr($size); ?>"><?php echo esc_html(self::home_size_label($size, $is_fr)); ?></option><?php endforeach; ?></select></label>
+                        <label><span><?php echo $is_fr ? 'Objets spéciaux ou notes' : 'Special items or notes'; ?></span><textarea name="specialItems" rows="4" maxlength="2000" placeholder="<?php echo esc_attr($is_fr ? 'Piano, antiquités, espaces de rangement, escaliers, détails sur l’ascenseur, objets qui ne déménagent pas...' : 'Piano, antiques, storage areas, stairs, elevator details, items that are not moving...'); ?>"></textarea></label>
+                        <label class="tme-honeypot" aria-hidden="true"><?php echo $is_fr ? 'Site web' : 'Website'; ?><input name="website" tabindex="-1" autocomplete="off"></label>
+                        <label class="tme-consent"><input name="consent" type="checkbox" value="1" required><span><?php echo $is_fr
+                            ? 'J’accepte que Déménagement Tom utilise ces renseignements pour préparer mon estimation. Si j’ajoute des photos ou une vidéo, les fichiers seront stockés de façon privée et automatiquement supprimés après ' . esc_html((string) $settings['retention_days']) . ' jours.'
+                            : 'I agree that Tom Moving may use this information to prepare my estimate. If I add photos or video, the files will be stored privately and automatically deleted after ' . esc_html((string) $settings['retention_days']) . ' days.'; ?></span></label>
+                    </div>
+                    <button class="tme-button tme-button--primary tme-button--wide" type="submit" data-tme-form-submit><?php echo $is_fr ? 'Continuer' : 'Continue'; ?></button>
+                    <p class="tme-footnote"><?php echo $is_fr ? 'Votre soumission sert uniquement à préparer votre estimation de déménagement.' : 'Your submission is used only to prepare your moving estimate.'; ?></p>
                 </form>
             </section>
 
             <section class="tme-card" data-tme-choice-view <?php echo (!$session || $session->submission_type !== 'info') ? 'hidden' : ''; ?>>
-                <div class="tme-step"><span>2</span><div><strong>Add visual details</strong><small>Your required information is saved</small></div></div>
-                <h2>How would you like to show the move?</h2>
-                <p>Thank you, <strong data-tme-choice-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong>. Choose photos or a guided video walkthrough.</p>
+                <div class="tme-step"><span>2</span><div><strong><?php echo $is_fr ? 'Ajoutez des détails visuels' : 'Add visual details'; ?></strong><small><?php echo $is_fr ? 'Vos informations obligatoires sont enregistrées' : 'Your required information is saved'; ?></small></div></div>
+                <h2><?php echo $is_fr ? 'Comment souhaitez-vous présenter le déménagement?' : 'How would you like to show the move?'; ?></h2>
+                <p><?php echo $is_fr ? 'Merci, ' : 'Thank you, '; ?><strong data-tme-choice-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong><?php echo $is_fr ? '. Choisissez des photos ou une visite vidéo guidée.' : '. Choose photos or a guided video walkthrough.'; ?></p>
                 <div class="tme-choice-grid">
                     <button class="tme-choice" type="button" data-tme-choose-photos>
-                        <strong>Upload photos</strong>
-                        <span>Add up to <?php echo esc_html((string) $settings['max_photos']); ?> photos of the rooms, furniture and access route.</span>
+                        <strong><?php echo $is_fr ? 'Téléverser des photos' : 'Upload photos'; ?></strong>
+                        <span><?php echo $is_fr ? 'Ajoutez jusqu’à ' : 'Add up to '; ?><?php echo esc_html((string) $settings['max_photos']); ?><?php echo $is_fr ? ' photos des pièces, des meubles et de la voie d’accès.' : ' photos of the rooms, furniture and access route.'; ?></span>
                     </button>
                     <button class="tme-choice tme-choice--video" type="button" data-tme-choose-video>
-                        <strong>Start video walkthrough</strong>
-                        <span>Record the parking route, entrances, stairs, rooms, furniture and items.</span>
+                        <strong><?php echo $is_fr ? 'Commencer la visite vidéo' : 'Start video walkthrough'; ?></strong>
+                        <span><?php echo $is_fr ? 'Filmez le trajet de stationnement, les entrées, les escaliers, les pièces, les meubles et les objets.' : 'Record the parking route, entrances, stairs, rooms, furniture and items.'; ?></span>
                     </button>
                 </div>
             </section>
 
             <section class="tme-card" data-tme-photo-view <?php echo (!$session || $session->submission_type !== 'photos' || $completed) ? 'hidden' : ''; ?>>
-                <div class="tme-step"><span>2</span><div><strong>Photo walkthrough</strong><small>Step 2 of 2</small></div></div>
-                <h2>Add photos of your move</h2>
-                <p>Hello <strong data-tme-photo-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong>. Include furniture, rooms, stairs, entrances and the truck parking route.</p>
+                <div class="tme-step"><span>2</span><div><strong><?php echo $is_fr ? 'Visite en photos' : 'Photo walkthrough'; ?></strong><small><?php echo $is_fr ? 'Étape 2 de 2' : 'Step 2 of 2'; ?></small></div></div>
+                <h2><?php echo $is_fr ? 'Ajoutez des photos de votre déménagement' : 'Add photos of your move'; ?></h2>
+                <p><?php echo $is_fr ? 'Bonjour ' : 'Hello '; ?><strong data-tme-photo-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong><?php echo $is_fr ? '. Incluez les meubles, les pièces, les escaliers, les entrées et le trajet de stationnement du camion.' : '. Include furniture, rooms, stairs, entrances and the truck parking route.'; ?></p>
                 <div class="tme-photo-actions">
-                    <label class="tme-button tme-button--primary">Choose photos<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" multiple data-tme-photo-files></label>
-                    <label class="tme-button">Take a photo<input type="file" accept="image/*" capture="environment" data-tme-photo-camera></label>
-                    <span data-tme-photo-count>0 of <?php echo esc_html((string) $settings['max_photos']); ?> photos</span>
+                    <label class="tme-button tme-button--primary"><?php echo $is_fr ? 'Choisir des photos' : 'Choose photos'; ?><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" multiple data-tme-photo-files></label>
+                    <label class="tme-button"><?php echo $is_fr ? 'Prendre une photo' : 'Take a photo'; ?><input type="file" accept="image/*" capture="environment" data-tme-photo-camera></label>
+                    <span data-tme-photo-count>0 <?php echo $is_fr ? 'sur' : 'of'; ?> <?php echo esc_html((string) $settings['max_photos']); ?> <?php echo $is_fr ? 'photos' : 'photos'; ?></span>
                 </div>
                 <div class="tme-photo-grid" data-tme-photo-grid></div>
-                <p class="tme-photo-empty" data-tme-photo-empty>No photos selected yet.</p>
+                <p class="tme-photo-empty" data-tme-photo-empty><?php echo $is_fr ? 'Aucune photo sélectionnée pour l’instant.' : 'No photos selected yet.'; ?></p>
                 <div class="tme-progress" data-tme-photo-progress hidden><span data-tme-photo-progress-bar></span></div>
                 <p class="tme-progress-text" data-tme-photo-progress-text hidden></p>
-                <button class="tme-button tme-button--primary tme-button--wide" type="button" data-tme-submit-photos disabled>Submit photos</button>
+                <button class="tme-button tme-button--primary tme-button--wide" type="button" data-tme-submit-photos disabled><?php echo $is_fr ? 'Soumettre les photos' : 'Submit photos'; ?></button>
             </section>
 
             <section class="tme-card" data-tme-recorder-view <?php echo (!$session || $session->submission_type !== 'video' || $completed) ? 'hidden' : ''; ?>>
-                <div class="tme-step"><span>2</span><div><strong>Video walkthrough</strong><small>Step 2 of 2</small></div></div>
-                <h2>Show us the full moving route</h2>
-                <p>Hello <strong data-tme-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong>. Move slowly and describe what you see.</p>
+                <div class="tme-step"><span>2</span><div><strong><?php echo $is_fr ? 'Visite vidéo' : 'Video walkthrough'; ?></strong><small><?php echo $is_fr ? 'Étape 2 de 2' : 'Step 2 of 2'; ?></small></div></div>
+                <h2><?php echo $is_fr ? 'Montrez-nous le trajet complet du déménagement' : 'Show us the full moving route'; ?></h2>
+                <p><?php echo $is_fr ? 'Bonjour ' : 'Hello '; ?><strong data-tme-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong><?php echo $is_fr ? '. Déplacez-vous lentement et décrivez ce que vous voyez.' : '. Move slowly and describe what you see.'; ?></p>
                 <ol class="tme-checklist">
+                    <?php if ($is_fr) : ?>
+                    <li>Commencez à l’extérieur : montrez où le camion peut se stationner et le trajet jusqu’à l’entrée.</li>
+                    <li>Montrez les entrées, ascenseurs, escaliers, couloirs et coins étroits.</li>
+                    <li>Visitez chaque pièce et nommez-la.</li>
+                    <li>Indiquez les meubles qui déménagent et identifiez clairement tout ce qui reste sur place.</li>
+                    <li>Montrez les boîtes, les objets non emballés, le sous-sol, le garage, l’espace d’entreposage et chaque étage.</li>
+                    <?php else : ?>
                     <li>Start outside: show where the truck can park and the route to the entrance.</li>
                     <li>Show entrances, elevators, stairs, hallways and tight corners.</li>
                     <li>Visit every room and say the room name.</li>
                     <li>Point out furniture that is moving and clearly identify anything staying behind.</li>
                     <li>Show boxes, loose items, basement, garage, storage and every floor.</li>
+                    <?php endif; ?>
                 </ol>
 
                 <div class="tme-permission" data-tme-permission>
-                    <h3>Ready to record?</h3>
-                    <p>Your browser will ask for camera and microphone access. Nothing is uploaded until you review it and press Submit.</p>
-                    <button class="tme-button tme-button--primary" type="button" data-tme-enable>Enable camera</button>
-                    <label class="tme-file-fallback">Or choose an existing video<input type="file" accept="video/mp4,video/webm,video/quicktime,video/*" capture="environment" data-tme-file></label>
+                    <h3><?php echo $is_fr ? 'Prêt à filmer?' : 'Ready to record?'; ?></h3>
+                    <p><?php echo $is_fr ? 'Votre navigateur vous demandera l’accès à la caméra et au microphone. Rien n’est téléversé avant que vous l’ayez visionné et cliqué sur Soumettre.' : 'Your browser will ask for camera and microphone access. Nothing is uploaded until you review it and press Submit.'; ?></p>
+                    <button class="tme-button tme-button--primary" type="button" data-tme-enable><?php echo $is_fr ? 'Activer la caméra' : 'Enable camera'; ?></button>
+                    <label class="tme-file-fallback"><?php echo $is_fr ? 'Ou choisissez une vidéo existante' : 'Or choose an existing video'; ?><input type="file" accept="video/mp4,video/webm,video/quicktime,video/*" capture="environment" data-tme-file></label>
                 </div>
 
                 <div class="tme-recorder" data-tme-recorder hidden>
                     <div class="tme-video-stage">
                         <video data-tme-video playsinline muted></video>
                         <span class="tme-rec-pill" data-tme-rec-pill hidden><i></i> REC <b data-tme-clock>0:00</b></span>
-                        <button class="tme-camera-switch" type="button" data-tme-switch hidden>Switch camera</button>
-                        <button class="tme-exit-fullscreen" type="button" data-tme-exit-fullscreen hidden aria-label="Exit full-screen recording">Exit full screen</button>
+                        <button class="tme-camera-switch" type="button" data-tme-switch hidden><?php echo $is_fr ? 'Changer de caméra' : 'Switch camera'; ?></button>
+                        <button class="tme-exit-fullscreen" type="button" data-tme-exit-fullscreen hidden aria-label="<?php echo esc_attr($is_fr ? 'Quitter l’enregistrement plein écran' : 'Exit full-screen recording'); ?>"><?php echo $is_fr ? 'Quitter le plein écran' : 'Exit full screen'; ?></button>
                     </div>
                     <div class="tme-controls">
-                        <p data-tme-help>Hold your phone horizontally when possible.</p>
+                        <p data-tme-help><?php echo $is_fr ? 'Tenez votre téléphone à l’horizontale lorsque possible.' : 'Hold your phone horizontally when possible.'; ?></p>
                         <div class="tme-button-row">
-                            <button class="tme-button tme-button--record" type="button" data-tme-start>Start recording</button>
-                            <button class="tme-button tme-button--stop" type="button" data-tme-stop hidden>Stop recording</button>
-                            <button class="tme-button" type="button" data-tme-retake hidden>Retake</button>
-                            <button class="tme-button tme-button--primary" type="button" data-tme-submit hidden>Submit video</button>
+                            <button class="tme-button tme-button--record" type="button" data-tme-start><?php echo $is_fr ? 'Commencer l’enregistrement' : 'Start recording'; ?></button>
+                            <button class="tme-button tme-button--stop" type="button" data-tme-stop hidden><?php echo $is_fr ? 'Arrêter l’enregistrement' : 'Stop recording'; ?></button>
+                            <button class="tme-button" type="button" data-tme-retake hidden><?php echo $is_fr ? 'Reprendre' : 'Retake'; ?></button>
+                            <button class="tme-button tme-button--primary" type="button" data-tme-submit hidden><?php echo $is_fr ? 'Soumettre la vidéo' : 'Submit video'; ?></button>
                         </div>
                         <div class="tme-progress" data-tme-progress hidden><span data-tme-progress-bar></span></div>
                         <p class="tme-progress-text" data-tme-progress-text hidden></p>
@@ -619,8 +849,8 @@ final class TME_Public
 
             <section class="tme-card tme-thanks" data-tme-done-view <?php echo (!$session || !$completed || $session->submission_type === 'info') ? 'hidden' : ''; ?>>
                 <span class="tme-checkmark">&#10003;</span>
-                <h2>Thank you<?php echo $session ? ', ' . esc_html($session->client_name) : ''; ?>!</h2>
-                <p data-tme-done-message>Your moving-estimate request was received. Tom Moving will review it and follow up with you.</p>
+                <h2><?php echo $is_fr ? 'Merci' : 'Thank you'; ?><?php echo $session ? ', ' . esc_html($session->client_name) : ''; ?>!</h2>
+                <p data-tme-done-message><?php echo $is_fr ? 'Votre demande d’estimation de déménagement a été reçue. Déménagement Tom l’examinera et communiquera avec vous.' : 'Your moving-estimate request was received. Tom Moving will review it and follow up with you.'; ?></p>
             </section>
         </div>
         <?php

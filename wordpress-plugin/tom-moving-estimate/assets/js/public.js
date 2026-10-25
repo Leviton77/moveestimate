@@ -4,6 +4,8 @@
   const app = document.querySelector("[data-tme-app]");
   if (!app || typeof TMEPublic === "undefined") return;
 
+  const T = TMEPublic.i18n || {};
+
   const q = (selector) => app.querySelector(selector);
   const formView = q("[data-tme-form-view]");
   const choiceView = q("[data-tme-choice-view]");
@@ -11,7 +13,15 @@
   const recorderView = q("[data-tme-recorder-view]");
   const doneView = q("[data-tme-done-view]");
   const form = q("[data-tme-form]");
+  const formMore = q("[data-tme-form-more]");
   const formSubmit = q("[data-tme-form-submit]");
+  const formMoreRequiredFields = formMore ? Array.from(formMore.querySelectorAll("[required]")) : [];
+
+  function setFormMoreRequired(isRequired) {
+    formMoreRequiredFields.forEach((field) => { field.required = isRequired; });
+  }
+
+  if (formMore && formMore.hidden) setFormMoreRequired(false);
   const choosePhotosButton = q("[data-tme-choose-photos]");
   const chooseVideoButton = q("[data-tme-choose-video]");
   const alertBox = q("[data-tme-alert]");
@@ -81,11 +91,11 @@
     }, options || {}));
     let data = {};
     try { data = await response.json(); } catch (_) { data = {}; }
-    if (!response.ok) throw new Error(data.message || "Something went wrong. Please try again.");
+    if (!response.ok) throw new Error(data.message || T.generic_error || "Something went wrong. Please try again.");
     return data;
   }
 
-  function uploadToR2(url, blob, contentType, onProgress, label) {
+  function uploadToR2(url, blob, contentType, onProgress, labelKey) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", url, true);
@@ -97,17 +107,24 @@
       };
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error((label || "File") + " upload failed (" + xhr.status + "). Please try again."));
+        else {
+          const labelOf = T[labelKey + "_of"] || (labelKey === "photo" ? "Photo" : labelKey === "video" ? "Video" : "File");
+          reject(new Error(
+            (T.upload_failed_labeled_prefix || "") + labelOf +
+            (T.upload_failed_labeled_mid || " upload failed (") + xhr.status +
+            (T.upload_failed_labeled_suffix || "). Please try again.")
+          ));
+        }
       };
-      xhr.onerror = () => reject(new Error("The browser could not reach private media storage. Check your connection and try again."));
+      xhr.onerror = () => reject(new Error(T.network_error || "The browser could not reach private media storage. Check your connection and try again."));
       xhr.send(blob);
     });
   }
 
   function doneCopy(type) {
-    if (type === "photos") return "Your photos were uploaded securely. Tom Moving will review them and follow up with you.";
-    if (type === "video") return "Your video walkthrough was uploaded securely. Tom Moving will review it and follow up with you.";
-    return "Your moving information was received. Tom Moving will review it and follow up with you.";
+    if (type === "photos") return T.done_photos || "Your photos were uploaded securely. Tom Moving will review them and follow up with you.";
+    if (type === "video") return T.done_video || "Your video walkthrough was uploaded securely. Tom Moving will review it and follow up with you.";
+    return T.done_info || "Your moving information was received. Tom Moving will review it and follow up with you.";
   }
 
   function openDone(clientName, type) {
@@ -121,13 +138,13 @@
     show(doneView, true);
     const heading = doneView.querySelector("h2");
     const copy = doneView.querySelector("[data-tme-done-message]");
-    if (heading && clientName) heading.textContent = "Thank you, " + clientName + "!";
+    if (heading && clientName) heading.textContent = (T.thank_you_prefix || "Thank you, ") + clientName + (T.thank_you_suffix || "!");
     if (copy) copy.textContent = doneCopy(type);
     doneView.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   function openChoice(clientName) {
-    q("[data-tme-choice-client-name]").textContent = clientName || "there";
+    q("[data-tme-choice-client-name]").textContent = clientName || T.fallback_there || "there";
     show(formView, false);
     show(choiceView, true);
     show(photoView, false);
@@ -137,7 +154,7 @@
   }
 
   function openPhotos(clientName) {
-    q("[data-tme-photo-client-name]").textContent = clientName || "there";
+    q("[data-tme-photo-client-name]").textContent = clientName || T.fallback_there || "there";
     show(formView, false);
     show(choiceView, false);
     show(recorderView, false);
@@ -148,7 +165,7 @@
   }
 
   function openRecorder(clientName) {
-    q("[data-tme-client-name]").textContent = clientName || "there";
+    q("[data-tme-client-name]").textContent = clientName || T.fallback_there || "there";
     show(formView, false);
     show(choiceView, false);
     show(photoView, false);
@@ -172,7 +189,7 @@
       if (result.submissionType === "photos") openPhotos(clientName);
       else openRecorder(clientName);
     } catch (error) {
-      message(error && error.message ? error.message : "The media walkthrough could not be started. Please try again.");
+      message(error && error.message ? error.message : T.choose_type_error || "The media walkthrough could not be started. Please try again.");
     } finally {
       busy = false;
       choosePhotosButton.disabled = false;
@@ -200,16 +217,16 @@
     const incoming = Array.from(files || []);
     for (const file of incoming) {
       if (selectedPhotos.length >= TMEPublic.maxPhotos) {
-        message("You can submit up to " + TMEPublic.maxPhotos + " photos.");
+        message((T.max_photos_prefix || "You can submit up to ") + TMEPublic.maxPhotos + (T.max_photos_suffix || " photos."));
         break;
       }
       const contentType = photoContentType(file);
       if (!contentType) {
-        message("Please choose JPEG, PNG, WebP, HEIC or HEIF photos.");
+        message(T.invalid_photo_type || "Please choose JPEG, PNG, WebP, HEIC or HEIF photos.");
         continue;
       }
       if (file.size < 1 || file.size > TMEPublic.maxPhotoBytes) {
-        message("Each photo must be smaller than " + TMEPublic.maxPhotoMb + " MB.");
+        message((T.photo_too_large_prefix || "Each photo must be smaller than ") + TMEPublic.maxPhotoMb + (T.photo_too_large_suffix || " MB."));
         continue;
       }
       selectedPhotos.push({
@@ -238,24 +255,24 @@
       card.className = "tme-photo-card";
       const image = document.createElement("img");
       image.src = photo.url;
-      image.alt = "Selected photo " + (index + 1);
+      image.alt = (T.selected_photo_alt_prefix || "Selected photo ") + (index + 1);
       image.addEventListener("error", function () { image.hidden = true; });
       const details = document.createElement("div");
       const name = document.createElement("strong");
-      name.textContent = photo.file.name || "Photo " + (index + 1);
+      name.textContent = photo.file.name || (T.photo_fallback_name_prefix || "Photo ") + (index + 1);
       const size = document.createElement("small");
       size.textContent = Math.max(1, Math.round(photo.file.size / 1024)) + " KB";
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "tme-photo-remove";
-      remove.textContent = "Remove";
-      remove.setAttribute("aria-label", "Remove " + name.textContent);
+      remove.textContent = T.remove_label || "Remove";
+      remove.setAttribute("aria-label", (T.remove_aria_prefix || "Remove ") + name.textContent);
       remove.addEventListener("click", () => removePhoto(photo.clientId));
       details.append(name, size);
       card.append(image, details, remove);
       photoGrid.appendChild(card);
     });
-    photoCount.textContent = selectedPhotos.length + " of " + TMEPublic.maxPhotos + " photos";
+    photoCount.textContent = selectedPhotos.length + (T.photo_count_mid || " of ") + TMEPublic.maxPhotos + (T.photo_count_suffix || " photos");
     show(photoEmpty, selectedPhotos.length === 0);
     photoSubmit.disabled = busy || selectedPhotos.length === 0;
   }
@@ -272,7 +289,7 @@
     try {
       for (let index = 0; index < selectedPhotos.length; index += 1) {
         const photo = selectedPhotos[index];
-        photoProgressText.textContent = "Preparing photo " + (index + 1) + " of " + selectedPhotos.length + "...";
+        photoProgressText.textContent = (T.preparing_photo_prefix || "Preparing photo ") + (index + 1) + (T.preparing_photo_mid || " of ") + selectedPhotos.length + (T.preparing_photo_suffix || "...");
         const signed = await api("sessions/" + token + "/photo-upload-url", {
           method: "POST",
           body: JSON.stringify({
@@ -286,11 +303,11 @@
           const fileFraction = total ? loaded / total : 0;
           const overall = Math.round(((index + fileFraction) / selectedPhotos.length) * 100);
           photoProgressBar.style.width = Math.min(100, overall) + "%";
-          photoProgressText.textContent = "Uploading photo " + (index + 1) + " of " + selectedPhotos.length + "... " + Math.round(fileFraction * 100) + "%";
-        }, "Photo");
+          photoProgressText.textContent = (T.uploading_photo_prefix || "Uploading photo ") + (index + 1) + (T.uploading_photo_mid || " of ") + selectedPhotos.length + (T.uploading_photo_mid2 || "... ") + Math.round(fileFraction * 100) + (T.uploading_photo_suffix || "%");
+        }, "photo");
         uploaded.push({ id: signed.id, key: signed.key });
       }
-      photoProgressText.textContent = "Verifying photos...";
+      photoProgressText.textContent = T.verifying_photos || "Verifying photos...";
       await api("sessions/" + token + "/complete-photos", {
         method: "POST",
         body: JSON.stringify({ photos: uploaded }),
@@ -300,7 +317,7 @@
       selectedPhotos = [];
       openDone(name, "photos");
     } catch (error) {
-      message(error && error.message ? error.message : "The photos could not be submitted. Please try again.");
+      message(error && error.message ? error.message : T.photos_submit_error || "The photos could not be submitted. Please try again.");
     } finally {
       busy = false;
       photoSubmit.disabled = selectedPhotos.length === 0;
@@ -405,7 +422,7 @@
     video.controls = false;
     video.muted = true;
     video.autoplay = true;
-    help.textContent = "Hold your phone horizontally when possible, then walk at a comfortable pace.";
+    help.textContent = T.help_preview || "Hold your phone horizontally when possible, then walk at a comfortable pace.";
   }
 
   function reviewState() {
@@ -419,13 +436,13 @@
     video.controls = true;
     video.muted = false;
     video.autoplay = false;
-    help.textContent = "Review your walkthrough before sending it.";
+    help.textContent = T.help_review || "Review your walkthrough before sending it.";
   }
 
   async function enableCamera(nextFacing) {
     message("");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-      message("This browser cannot record directly. Choose an existing video instead, or use the current Safari, Chrome or Edge browser.");
+      message(T.unsupported_browser || "This browser cannot record directly. Choose an existing video instead, or use the current Safari, Chrome or Edge browser.");
       return;
     }
     try {
@@ -439,7 +456,7 @@
       await video.play().catch(() => undefined);
       previewState();
     } catch (_) {
-      message("Camera or microphone access was blocked. Allow access in your browser settings, then try again. You can also choose an existing video.");
+      message(T.camera_blocked || "Camera or microphone access was blocked. Allow access in your browser settings, then try again. You can also choose an existing video.");
     }
   }
 
@@ -466,19 +483,19 @@
       mediaRecorder.ondataavailable = (event) => { if (event.data && event.data.size) chunks.push(event.data); };
       mediaRecorder.onerror = () => {
         exitRecordingView();
-        message("Recording stopped unexpectedly. Please try again.");
+        message(T.recording_error || "Recording stopped unexpectedly. Please try again.");
         stopTracks();
       };
       mediaRecorder.onstop = () => {
         selectedBlob = new Blob(chunks, { type: mediaRecorder.mimeType || mimeType || "video/webm" });
         if (!selectedBlob.size) {
-          message("No video was captured. Please try again.");
+          message(T.no_video_captured || "No video was captured. Please try again.");
           show(permission, true);
           show(recorderShell, false);
           return;
         }
         if (selectedBlob.size > TMEPublic.maxBytes) {
-          message("This recording is larger than " + TMEPublic.maxMb + " MB. Please retake a shorter walkthrough.");
+          message((T.recording_too_large_prefix || "This recording is larger than ") + TMEPublic.maxMb + (T.recording_too_large_suffix || " MB. Please retake a shorter walkthrough."));
           clearSelected();
           show(permission, true);
           show(recorderShell, false);
@@ -494,16 +511,16 @@
       show(stopButton, true);
       show(switchButton, false);
       show(recPill, true);
-      help.textContent = "Recording " + timeLabel(seconds) + " - maximum 15:00";
+      help.textContent = (T.recording_time_prefix || "Recording ") + timeLabel(seconds) + (T.recording_time_suffix || " - maximum 15:00");
       clockTimer = window.setInterval(() => {
         seconds += 1;
         clock.textContent = timeLabel(seconds);
-        help.textContent = "Recording " + timeLabel(seconds) + " - maximum 15:00";
+        help.textContent = (T.recording_time_prefix || "Recording ") + timeLabel(seconds) + (T.recording_time_suffix || " - maximum 15:00");
       }, 1000);
       limitTimer = window.setTimeout(stopRecording, TMEPublic.maxSeconds * 1000);
     } catch (_) {
       exitRecordingView();
-      message("This browser could not start the recorder. Try the current Safari, Chrome or Edge browser.");
+      message(T.recorder_start_error || "This browser could not start the recorder. Try the current Safari, Chrome or Edge browser.");
     }
   }
 
@@ -519,12 +536,12 @@
     message("");
     if (!file) return;
     if (file.size > TMEPublic.maxBytes) {
-      message("This video is larger than " + TMEPublic.maxMb + " MB. Please choose or record a shorter video.");
+      message((T.video_too_large_prefix || "This video is larger than ") + TMEPublic.maxMb + (T.video_too_large_suffix || " MB. Please choose or record a shorter video."));
       fileInput.value = "";
       return;
     }
     if (!/^video\/(mp4|webm|quicktime)$/i.test(file.type)) {
-      message("Please choose an MP4, WebM or QuickTime video.");
+      message(T.invalid_video_type || "Please choose an MP4, WebM or QuickTime video.");
       fileInput.value = "";
       return;
     }
@@ -538,7 +555,7 @@
     video.src = selectedUrl;
     video.onloadedmetadata = function () {
       if (Number.isFinite(video.duration) && video.duration > TMEPublic.maxSeconds + 2) {
-        message("The video is longer than 15 minutes. Please choose or record a shorter walkthrough.");
+        message(T.video_too_long || "The video is longer than 15 minutes. Please choose or record a shorter walkthrough.");
         clearSelected();
         show(permission, true);
         show(recorderShell, false);
@@ -556,7 +573,7 @@
     show(progress, true);
     show(progressText, true);
     progressBar.style.width = "0%";
-    progressText.textContent = "Preparing secure upload...";
+    progressText.textContent = T.preparing_upload || "Preparing secure upload...";
     try {
       const contentType = (selectedBlob.type || "video/mp4").split(";")[0].toLowerCase();
       const signed = await api("sessions/" + token + "/upload-url", {
@@ -566,9 +583,9 @@
       await uploadToR2(signed.uploadUrl, selectedBlob, contentType, function (loaded, total) {
         const percent = total ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
         progressBar.style.width = percent + "%";
-        progressText.textContent = "Uploading securely... " + percent + "%";
-      }, "Video");
-      progressText.textContent = "Verifying upload...";
+        progressText.textContent = (T.uploading_securely_prefix || "Uploading securely... ") + percent + (T.uploading_securely_suffix || "%");
+      }, "video");
+      progressText.textContent = T.verifying_upload || "Verifying upload...";
       await api("sessions/" + token + "/complete", {
         method: "POST",
         body: JSON.stringify({ key: signed.key }),
@@ -577,7 +594,7 @@
       clearSelected();
       openDone(name, "video");
     } catch (error) {
-      message(error && error.message ? error.message : "Upload failed. Please try again.");
+      message(error && error.message ? error.message : T.upload_failed || "Upload failed. Please try again.");
     } finally {
       busy = false;
       submitButton.disabled = false;
@@ -590,11 +607,19 @@
   form.addEventListener("submit", async function (event) {
     event.preventDefault();
     if (busy || !form.reportValidity()) return;
+    if (formMore && formMore.hidden) {
+      formMore.hidden = false;
+      setFormMoreRequired(true);
+      const firstField = formMore.querySelector("input, select, textarea");
+      if (firstField) firstField.focus();
+      formMore.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     busy = true;
     message("");
     const original = formSubmit.textContent;
     formSubmit.disabled = true;
-    formSubmit.textContent = "Submitting...";
+    formSubmit.textContent = T.submitting_label || "Submitting...";
     const values = Object.fromEntries(new FormData(form).entries());
     values.consent = Boolean(values.consent);
     values.submissionType = "info";
@@ -606,7 +631,7 @@
       window.history.replaceState({}, "", url.toString());
       openChoice(result.clientName || values.clientName);
     } catch (error) {
-      message(error && error.message ? error.message : "The estimate could not be started. Please try again.");
+      message(error && error.message ? error.message : T.estimate_start_error || "The estimate could not be started. Please try again.");
     } finally {
       busy = false;
       formSubmit.disabled = false;
