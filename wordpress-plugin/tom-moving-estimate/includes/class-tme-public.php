@@ -311,12 +311,16 @@ final class TME_Public
             return new WP_Error('tme_upload_start', self::pick($lang, 'The upload could not be started. Please try again.', 'Le téléversement n’a pas pu démarrer. Veuillez réessayer.'), array('status' => 502));
         }
         $size = (int) $payload['size'];
-        TME_DB::update($session->id, array(
+        $saved = TME_DB::update($session->id, array(
             'pending_video_key'  => $key,
             'pending_upload_id'  => $upload_id,
             'video_content_type' => $content_type,
             'video_size'         => $size,
         ), array('%s', '%s', '%s', '%d'));
+        if (!$saved) {
+            $r2->abort_multipart($key, $upload_id);
+            return new WP_Error('tme_upload_start', self::pick($lang, 'The upload could not be started. Please try again.', 'Le téléversement n’a pas pu démarrer. Veuillez réessayer.'), array('status' => 500));
+        }
 
         return array(
             'key'       => $key,

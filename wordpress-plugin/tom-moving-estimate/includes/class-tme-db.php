@@ -41,7 +41,7 @@ final class TME_DB
             status varchar(20) NOT NULL DEFAULT 'new',
             video_key varchar(512) NULL,
             pending_video_key varchar(512) NULL,
-            pending_upload_id varchar(255) NULL,
+            pending_upload_id text NULL,
             language varchar(5) NOT NULL DEFAULT 'en',
             form_url varchar(255) NULL,
             video_content_type varchar(100) NULL,
@@ -153,7 +153,11 @@ final class TME_DB
         global $wpdb;
         $data['updated_at'] = current_time('mysql', true);
         $formats[] = '%s';
-        return $wpdb->update(self::table(), $data, array('id' => $id), $formats, array('%d')) !== false;
+        $updated = $wpdb->update(self::table(), $data, array('id' => $id), $formats, array('%d')) !== false;
+        if (!$updated) {
+            error_log('Tom Moving Estimate: could not update estimate ' . $id . ': ' . $wpdb->last_error);
+        }
+        return $updated;
     }
 
     public static function delete(int $id): bool
