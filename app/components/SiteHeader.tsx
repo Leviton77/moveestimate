@@ -9,7 +9,7 @@ export function SiteHeader() {
           <span>MoveEstimate</span>
         </Link>
         <nav className="site-nav" aria-label="Main navigation">
-          <a href="https://tommoving.ca/estimate/">Get estimate</a>
+          <a href="https://demenagementtom.ca/en/estimate/">Get estimate</a>
         </nav>
       </div>
     </header>

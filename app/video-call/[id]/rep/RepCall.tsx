@@ -8,7 +8,7 @@ interface RepCallProps {
   callId: string;
   repEmail: string;
   signalingUrl: string;
-  /** Base WordPress admin URL (e.g. https://tommoving.ca/wp-admin), for the
+  /** Base WordPress admin URL (e.g. https://demenagementtom.ca/wp-admin), for the
    * "Finish in Tom Estimator" link. Empty if WP_ADMIN_URL isn't configured. */
   wpAdminUrl: string;
 }

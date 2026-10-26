@@ -16,8 +16,8 @@ test("ships the MoveEstimate homepage, pointing off-site for the async estimate"
   assert.match(page, /Start my free estimate/);
   // The async self-serve flow moved to the WordPress plugin; both entry
   // points now link off-site instead of to a route this app no longer has.
-  assert.match(page, /https:\/\/tommoving\.ca\/estimate\//);
-  assert.match(header, /https:\/\/tommoving\.ca\/estimate\//);
+  assert.match(page, /https:\/\/demenagementtom\.ca\/en\/estimate\//);
+  assert.match(header, /https:\/\/demenagementtom\.ca\/en\/estimate\//);
   assert.doesNotMatch(page, /href="\/estimate"/);
   assert.doesNotMatch(page, /href="\/rep"/);
   assert.doesNotMatch(header, /href="\/rep"/);
