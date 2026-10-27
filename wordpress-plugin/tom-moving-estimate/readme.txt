@@ -4,7 +4,7 @@ Tags: moving estimate, photos, video, Cloudflare R2
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.0-rc25
+Stable tag: 1.2.0-rc26
 License: Proprietary
 
 Private moving-estimate information, photo and video submissions, with media hosted on Cloudflare R2 and WordPress rep access.
@@ -142,3 +142,6 @@ A representative can start a guided real-time video call with a customer from Mo
 
 = 1.2.0-rc25 =
 * Videos recorded in the form are now saved as one file when recording stops. Before, the recorder saved 1-second pieces, and on some phones and browsers the sent video played only its first second.
+
+= 1.2.0-rc26 =
+* "Choose an existing video" now opens the phone's files and gallery. Before, on Android it opened the camera, so a saved video could not be sent.

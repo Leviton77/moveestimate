@@ -1001,7 +1001,7 @@ final class TME_Public
                     <h3><?php echo $is_fr ? 'Prêt à filmer?' : 'Ready to record?'; ?></h3>
                     <p><?php echo $is_fr ? 'Votre navigateur vous demandera l’accès à la caméra et au microphone. Rien n’est téléversé avant que vous l’ayez visionné et cliqué sur Soumettre.' : 'Your browser will ask for camera and microphone access. Nothing is uploaded until you review it and press Submit.'; ?></p>
                     <button class="tme-button tme-button--primary" type="button" data-tme-enable><?php echo $is_fr ? 'Activer la caméra' : 'Enable camera'; ?></button>
-                    <label class="tme-file-fallback"><?php echo $is_fr ? 'Ou choisissez une vidéo existante' : 'Or choose an existing video'; ?><input type="file" accept="video/mp4,video/webm,video/quicktime,video/*" capture="environment" data-tme-file></label>
+                    <label class="tme-file-fallback"><?php echo $is_fr ? 'Ou choisissez une vidéo existante' : 'Or choose an existing video'; ?><input type="file" accept="video/mp4,video/webm,video/quicktime,video/*" data-tme-file></label>
                 </div>
 
                 <div class="tme-recorder" data-tme-recorder hidden>
