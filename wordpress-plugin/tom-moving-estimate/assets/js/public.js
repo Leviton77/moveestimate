@@ -555,7 +555,8 @@
         video.src = selectedUrl;
         reviewState();
       };
-      mediaRecorder.start(1000);
+      // One piece, not 1-second slices: sliced MP4 recordings can play back as only their first second.
+      mediaRecorder.start();
       show(startButton, false);
       show(stopButton, true);
       show(switchButton, false);
