@@ -24,6 +24,7 @@
   if (formMore && formMore.hidden) setFormMoreRequired(false);
   const choosePhotosButton = q("[data-tme-choose-photos]");
   const chooseVideoButton = q("[data-tme-choose-video]");
+  const chooseFileInput = q("[data-tme-choose-file]");
   const alertBox = q("[data-tme-alert]");
   const permission = q("[data-tme-permission]");
   const recorderShell = q("[data-tme-recorder]");
@@ -237,6 +238,7 @@
       const clientName = result.clientName || q("[data-tme-choice-client-name]").textContent;
       if (result.submissionType === "photos") openPhotos(clientName);
       else openRecorder(clientName);
+      return true;
     } catch (error) {
       message(error && error.message ? error.message : T.choose_type_error || "The media walkthrough could not be started. Please try again.");
     } finally {
@@ -555,7 +557,8 @@
         video.src = selectedUrl;
         reviewState();
       };
-      mediaRecorder.start(1000);
+      // One piece, not 1-second slices: sliced MP4 recordings can play back as only their first second.
+      mediaRecorder.start();
       show(startButton, false);
       show(stopButton, true);
       show(switchButton, false);
@@ -684,6 +687,16 @@
 
   choosePhotosButton.addEventListener("click", () => chooseSubmissionType("photos"));
   chooseVideoButton.addEventListener("click", () => chooseSubmissionType("video"));
+  if (chooseFileInput) {
+    chooseFileInput.addEventListener("change", async () => {
+      const file = chooseFileInput.files && chooseFileInput.files[0];
+      chooseFileInput.value = "";
+      if (file && await chooseSubmissionType("video")) chooseFile(file);
+    });
+    chooseFileInput.closest("label").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); chooseFileInput.click(); }
+    });
+  }
   if (photoFiles) photoFiles.addEventListener("change", () => addPhotos(photoFiles.files));
   if (photoCamera) photoCamera.addEventListener("change", () => addPhotos(photoCamera.files));
   if (photoSubmit) photoSubmit.addEventListener("click", submitPhotos);
