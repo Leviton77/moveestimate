@@ -6,7 +6,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const protocol = requestHeaders.get("x-forwarded-proto") ?? "https";
-  const origin = host ? `${protocol}://${host}` : "https://tommoving.ca";
+  const origin = host ? `${protocol}://${host}` : "https://demenagementtom.ca";
   return {
     title: { default: "MoveEstimate | Tom Moving", template: "%s | MoveEstimate" },
     description: "Request an accurate moving estimate from Tom Moving with a secure video walkthrough.",

@@ -64,7 +64,7 @@ keeps its own copy under its own 30-day retention — and anything older than
 `CLEANUP_MAX_AGE_DAYS` (45) regardless.
 
 A second cron (`*/5 * * * *`) opens `WP_CRON_URL`
-(`https://tommoving.ca/wp-cron.php`) so the plugin's 5-minute import sweep
+(`https://demenagementtom.ca/wp-cron.php`) so the plugin's 5-minute import sweep
 runs on time even when nobody visits the site.
  Cleaned calls get `media_deleted_at`
 and `video_key = NULL`. Test locally with `CLEANUP_AFTER_IMPORT_DAYS=0` in
