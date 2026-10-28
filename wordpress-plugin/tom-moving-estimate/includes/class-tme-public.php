@@ -948,12 +948,17 @@ final class TME_Public
             <section class="tme-card" data-tme-choice-view <?php echo (!$session || $session->submission_type !== 'info') ? 'hidden' : ''; ?>>
                 <div class="tme-step"><span>2</span><div><strong><?php echo $is_fr ? 'Ajoutez des détails visuels' : 'Add visual details'; ?></strong><small><?php echo $is_fr ? 'Vos informations obligatoires sont enregistrées' : 'Your required information is saved'; ?></small></div></div>
                 <h2><?php echo $is_fr ? 'Comment souhaitez-vous présenter le déménagement?' : 'How would you like to show the move?'; ?></h2>
-                <p><?php echo $is_fr ? 'Merci, ' : 'Thank you, '; ?><strong data-tme-choice-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong><?php echo $is_fr ? '. Choisissez des photos ou une visite vidéo guidée.' : '. Choose photos or a guided video walkthrough.'; ?></p>
+                <p><?php echo $is_fr ? 'Merci, ' : 'Thank you, '; ?><strong data-tme-choice-client-name><?php echo $session ? esc_html($session->client_name) : ''; ?></strong><?php echo $is_fr ? '. Envoyez des photos, une vidéo déjà filmée ou faites une visite vidéo.' : '. Send photos, a video you already have, or record a video walkthrough.'; ?></p>
                 <div class="tme-choice-grid">
                     <button class="tme-choice" type="button" data-tme-choose-photos>
                         <strong><?php echo $is_fr ? 'Téléverser des photos' : 'Upload photos'; ?></strong>
                         <span><?php echo $is_fr ? 'Ajoutez jusqu’à ' : 'Add up to '; ?><?php echo esc_html((string) $settings['max_photos']); ?><?php echo $is_fr ? ' photos des pièces, des meubles et de la voie d’accès.' : ' photos of the rooms, furniture and access route.'; ?></span>
                     </button>
+                    <label class="tme-choice tme-choice--file" tabindex="0">
+                        <strong><?php echo $is_fr ? 'Téléverser une vidéo' : 'Upload a video'; ?></strong>
+                        <span><?php echo $is_fr ? 'Choisissez une vidéo déjà filmée dans votre téléphone ou votre ordinateur.' : 'Choose a video you already filmed on your phone or computer.'; ?></span>
+                        <input type="file" accept="video/mp4,video/webm,video/quicktime,video/*" data-tme-choose-file>
+                    </label>
                     <button class="tme-choice tme-choice--video" type="button" data-tme-choose-video>
                         <strong><?php echo $is_fr ? 'Commencer la visite vidéo' : 'Start video walkthrough'; ?></strong>
                         <span><?php echo $is_fr ? 'Filmez le trajet de stationnement, les entrées, les escaliers, les pièces, les meubles et les objets.' : 'Record the parking route, entrances, stairs, rooms, furniture and items.'; ?></span>
