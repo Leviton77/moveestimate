@@ -672,6 +672,18 @@
     try {
       const result = await api("sessions", { method: "POST", body: JSON.stringify(values) });
       token = result.token;
+      // Analytics is optional and must never interrupt a saved quote.
+      try {
+        const consent = JSON.parse(window.localStorage.getItem("dt_consent"));
+        if (token && consent?.v === "granted" && Date.now() - consent.t < 31536e6 &&
+            typeof window.gtag === "function") {
+          window.gtag("event", "generate_lead", {
+            send_to: "G-Y7EL9CFYVR",
+            form_type: "quote",
+            page_location: window.location.origin + window.location.pathname,
+          });
+        }
+      } catch (_) { /* Continue even if analytics is unavailable. */ }
       const url = new URL(TMEPublic.estimateUrl, window.location.href);
       url.searchParams.set("session", token);
       window.history.replaceState({}, "", url.toString());
