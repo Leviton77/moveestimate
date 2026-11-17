@@ -684,6 +684,14 @@
           });
         }
       } catch (_) { /* Continue even if analytics is unavailable. */ }
+      // Only a real, completed initial lead counts; honeypot replies omit
+      // completed. Photo/video uploads and resumed sessions do not count again.
+      try {
+        if (token && result.completed === true && window.dtConsent === "granted" &&
+            typeof window.oaiq === "function") {
+          window.oaiq("measure", "lead_created", { type: "customer_action" }, { opt_out: true });
+        }
+      } catch (_) { /* Conversion measurement must not interrupt the quote. */ }
       const url = new URL(TMEPublic.estimateUrl, window.location.href);
       url.searchParams.set("session", token);
       window.history.replaceState({}, "", url.toString());
