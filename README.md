@@ -166,3 +166,9 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
+
+
+## Отчёт для голосового пульта
+
+- [Инструкция по отчётам](docs/pult-reporting.md)
+- [Текущий статус проекта](STATUS.md)
