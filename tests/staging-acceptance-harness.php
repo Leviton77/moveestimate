@@ -14,6 +14,8 @@ function wp_parse_url($value, $component = -1) { return parse_url($value, $compo
 function home_url($p = '/') { return rtrim($GLOBALS['fixture_origin'], '/') . $p; }
 function site_url($p = '/') { return rtrim($GLOBALS['fixture_site_origin'] ?? $GLOBALS['fixture_origin'], '/') . $p; }
 function current_user_can($capability) { return $GLOBALS['fixture_admin'] ?? true; }
+function plugin_basename($file) { return 'tme-rc31-acceptance/acceptance.php'; }
+function doing_action($action) { return $action === 'activate_tme-rc31-acceptance/acceptance.php' && !empty($GLOBALS['fixture_activation_action']); }
 function get_option($key, $default = false) { return $GLOBALS['fixture_options'][$key] ?? $default; }
 function register_activation_hook($file, $callback) { $GLOBALS['fixture_activation'] = $callback; }
 function add_filter($tag, $callback, $priority = 10, $argc = 1) { $GLOBALS['fixture_filters'][$tag][$priority][] = $callback; }
@@ -143,6 +145,7 @@ function reset_fixture() {
     $GLOBALS['fixture_origin'] = 'https://1227937.us19.myftpupload.com';
     unset($GLOBALS['fixture_site_origin']);
     $GLOBALS['fixture_admin'] = true;
+    $GLOBALS['fixture_activation_action'] = false;
     $GLOBALS['fixture_options'] = array('tme_db_version' => TME_VERSION);
     $GLOBALS['fixture_filters'] = array();
     $GLOBALS['fixture_ignore_mail_filter'] = false;
@@ -170,6 +173,8 @@ reset_fixture(); $GLOBALS['fixture_site_origin'] = 'https://demenagementtom.ca';
 assertion(!TME_RC31_Staging_Acceptance::run()['success'], 'mismatched site URL blocks run');
 reset_fixture(); $GLOBALS['fixture_admin'] = false;
 assertion(!TME_RC31_Staging_Acceptance::run()['success'] && count($wpdb->rows) === 1, 'non-administrator cannot run fixture');
+reset_fixture(); $GLOBALS['fixture_admin'] = false; $GLOBALS['fixture_activation_action'] = true;
+assertion(TME_RC31_Staging_Acceptance::run()['success'], 'delegated WordPress activation is accepted without opening a public execution path');
 reset_fixture(); $wpdb->missingColumn = true;
 assertion(!TME_RC31_Staging_Acceptance::run()['success'] && count($wpdb->rows) === 1, 'missing live columns stop before inserts');
 reset_fixture(); $GLOBALS['fixture_ignore_mail_filter'] = true;
