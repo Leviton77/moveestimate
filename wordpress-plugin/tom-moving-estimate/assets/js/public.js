@@ -669,6 +669,20 @@
     values.submissionType = "info";
     values.language = TMEPublic.locale === "fr" ? "fr" : "en";
     values.formUrl = TMEPublic.estimateUrl;
+    // Attribution is optional, consent-gated, and confined to the initial save.
+    // Never use it as an analytics event parameter or copy it into a URL.
+    delete values.googleClick;
+    try {
+      if (!token && window.dtConsent === "granted" && typeof window.dtGoogleClick === "function") {
+        const click = window.dtGoogleClick();
+        if (click) values.googleClick = {
+          gclid: click.gclid,
+          capturedAt: click.capturedAt,
+          consentAt: click.consentAt,
+          consent: "granted",
+        };
+      }
+    } catch (_) { /* Optional attribution must not interrupt the estimate. */ }
     try {
       const result = await api("sessions", { method: "POST", body: JSON.stringify(values) });
       token = result.token;

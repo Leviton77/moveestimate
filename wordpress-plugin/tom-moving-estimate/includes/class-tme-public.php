@@ -153,6 +153,7 @@ final class TME_Public
             'submitted_at'        => $submission_type === 'info' ? current_time('mysql', true) : null,
             'language'            => $lang,
             'form_url'            => self::same_site_url((string) ($payload['formUrl'] ?? '')),
+            'google_click'        => $submission_type === 'info' ? ($payload['googleClick'] ?? null) : null,
         );
 
         // Email, destination, move date and home size are optional: a phone number is enough to follow up.
@@ -634,6 +635,10 @@ final class TME_Public
 
         if ($step === 1) {
             $message .= "Stage: Contact information submitted.\n";
+            // Disabled until the isolated private-register mapping is approved.
+            if (defined('TME_GOOGLE_CLICK_INTERNAL_MAIL') && TME_GOOGLE_CLICK_INTERNAL_MAIL === true) {
+                $message .= TME_Google_Click::internal_notification($session);
+            }
         } elseif ($step === 2) {
             $method = $session->submission_type === 'photos' ? 'photo walkthrough' : 'video walkthrough';
             $message .= "Stage: Chose to continue with a {$method} (not yet uploaded).\n";
