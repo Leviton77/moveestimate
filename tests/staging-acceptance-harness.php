@@ -18,6 +18,7 @@ function get_option($key, $default = false) { return $GLOBALS['fixture_options']
 function register_activation_hook($file, $callback) { $GLOBALS['fixture_activation'] = $callback; }
 function add_filter($tag, $callback, $priority = 10, $argc = 1) { $GLOBALS['fixture_filters'][$tag][$priority][] = $callback; }
 function remove_filter($tag, $callback, $priority = 10) { unset($GLOBALS['fixture_filters'][$tag][$priority]); }
+function admin_url($path = '') { return 'https://1227937.us19.myftpupload.com/wp-admin/' . $path; }
 function sanitize_key($v) { return preg_replace('/[^a-z0-9_-]/', '', strtolower($v)); }
 function sanitize_text_field($v) { return trim(strip_tags($v)); }
 function sanitize_textarea_field($v) { return trim(strip_tags($v)); }
@@ -150,6 +151,7 @@ function reset_fixture() {
 reset_fixture();
 $original = $wpdb->rows;
 $report = TME_RC31_Staging_Acceptance::run();
+if (!$report['success']) echo json_encode($report, JSON_PRETTY_PRINT) . "\n";
 assertion($report['success'] === true, 'allowed staging run passes actual handler/DB doubles');
 assertion($report['synthetic_deleted'] === 2, 'both owned fixture records are removed');
 assertion($wpdb->rows === $original, 'unrelated existing row is unchanged');
