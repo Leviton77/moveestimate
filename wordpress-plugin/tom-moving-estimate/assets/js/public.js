@@ -648,6 +648,35 @@
     }
   }
 
+
+  function currentAdvertisingConsent() {
+    if (window.dtConsent !== "granted") return null;
+    try {
+      const choice = JSON.parse(window.localStorage.getItem("dt_consent"));
+      const now = Date.now();
+      return choice?.v === "granted" && Number.isFinite(choice.t) &&
+        choice.t > 0 && choice.t <= now && now - choice.t < 31536e6 ? choice : null;
+    } catch (_) { return null; }
+  }
+
+  function campaignAttribution() {
+    const choice = currentAdvertisingConsent();
+    if (!choice) return null;
+    const keys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+    const valid = value => typeof value === "string" && /^[a-zA-Z0-9._~-]{1,120}$/.test(value);
+    let stored = {};
+    try { stored = JSON.parse(window.sessionStorage.getItem("dt_campaign_utm") || "{}") || {}; }
+    catch (_) { /* Current-page labels can still be used when session storage is blocked. */ }
+    const incoming = new URLSearchParams(window.location.search), values = {};
+    // Match the theme: a newly tagged visit replaces previous campaign labels.
+    const tagged = keys.some(key => valid(incoming.get(key)));
+    for (const key of keys) {
+      const value = tagged ? incoming.get(key) : stored[key];
+      if (valid(value)) values[key] = value;
+    }
+    return Object.keys(values).length ? { consent: "granted", consentAt: choice.t, values } : null;
+  }
+
   form.addEventListener("submit", async function (event) {
     event.preventDefault();
     if (busy || !form.reportValidity()) return;
@@ -672,6 +701,11 @@
     // Attribution is optional, consent-gated, and confined to the initial save.
     // Never use it as an analytics event parameter or copy it into a URL.
     delete values.googleClick;
+    delete values.campaignAttribution;
+    if (!token) {
+      try { const campaign = campaignAttribution(); if (campaign) values.campaignAttribution = campaign; }
+      catch (_) { /* Attribution must never interrupt a quote. */ }
+    }
     try {
       if (!token && window.dtConsent === "granted" && typeof window.dtGoogleClick === "function") {
         const click = window.dtGoogleClick();
@@ -684,12 +718,13 @@
       }
     } catch (_) { /* Optional attribution must not interrupt the estimate. */ }
     try {
+      const initialSave = !token;
       const result = await api("sessions", { method: "POST", body: JSON.stringify(values) });
+      const completedInitialSave = initialSave && result.completed === true && !!result.token;
       token = result.token;
       // Analytics is optional and must never interrupt a saved quote.
       try {
-        const consent = JSON.parse(window.localStorage.getItem("dt_consent"));
-        if (token && consent?.v === "granted" && Date.now() - consent.t < 31536e6 &&
+        if (completedInitialSave && currentAdvertisingConsent() &&
             typeof window.gtag === "function") {
           window.gtag("event", "generate_lead", {
             send_to: "G-Y7EL9CFYVR",
@@ -701,7 +736,7 @@
       // Only a real, completed initial lead counts; honeypot replies omit
       // completed. Photo/video uploads and resumed sessions do not count again.
       try {
-        if (token && result.completed === true && window.dtConsent === "granted" &&
+        if (completedInitialSave && currentAdvertisingConsent() &&
             typeof window.oaiq === "function") {
           window.oaiq("measure", "lead_created", { type: "customer_action" }, { opt_out: true });
         }

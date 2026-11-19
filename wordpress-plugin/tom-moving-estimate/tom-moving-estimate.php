@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tom Moving Estimate
  * Description: Private moving-estimate information, photo and video submissions using WordPress and Cloudflare R2.
- * Version: 1.2.0-rc30-gclid-draft
+ * Version: 1.2.0-rc31-attribution-draft
  * Author: Tom Moving
  * Requires at least: 6.5
  * Requires PHP: 8.1
@@ -13,13 +13,14 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('TME_VERSION', '1.2.0-rc30-gclid-draft');
+define('TME_VERSION', '1.2.0-rc31-attribution-draft');
 define('TME_FILE', __FILE__);
 define('TME_DIR', plugin_dir_path(__FILE__));
 define('TME_URL', plugin_dir_url(__FILE__));
 
 require_once TME_DIR . 'includes/class-tme-secrets.php';
 require_once TME_DIR . 'includes/class-tme-google-click.php';
+require_once TME_DIR . 'includes/class-tme-campaign-attribution.php';
 require_once TME_DIR . 'includes/class-tme-db.php';
 require_once TME_DIR . 'includes/class-tme-ai-report.php';
 $tme_ai_export_file = TME_DIR . 'includes/class-tme-ai-export.php';

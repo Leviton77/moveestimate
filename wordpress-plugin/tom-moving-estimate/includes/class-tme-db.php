@@ -44,6 +44,8 @@ final class TME_DB
             pending_upload_id text NULL,
             language varchar(5) NOT NULL DEFAULT 'en',
             form_url varchar(255) NULL,
+            campaign_attribution longtext NULL,
+            campaign_consent_at datetime NULL,
             google_click_id varchar(512) NULL,
             google_click_captured_at datetime NULL,
             google_click_consent_at datetime NULL,
@@ -142,6 +144,21 @@ final class TME_DB
                 $wpdb->update(self::table(), $click, array('id' => $id), array('%s', '%s', '%s'), array('%d'));
             } catch (Throwable $ignored) {
                 // The lead already exists; don't expose the identifier or fail the form.
+            } finally {
+                $wpdb->suppress_errors($previous);
+            }
+        }
+
+        // Campaign labels are optional, client-asserted source evidence. Keep an
+        // optional schema/write failure separate from the saved lead itself.
+        $campaign = $data['submission_type'] === 'info'
+            ? TME_Campaign_Attribution::validate($data['campaign'] ?? null) : array();
+        if ($campaign) {
+            $previous = $wpdb->suppress_errors(true);
+            try {
+                $wpdb->update(self::table(), $campaign, array('id' => $id), array('%s', '%s'), array('%d'));
+            } catch (Throwable $ignored) {
+                // Never lose or duplicate a lead because optional attribution failed.
             } finally {
                 $wpdb->suppress_errors($previous);
             }

@@ -154,3 +154,7 @@ A representative can start a guided real-time video call with a customer from Mo
 
 = 1.2.0-rc27 =
 * The second step now offers three choices: upload photos, upload a video (opens the gallery or files directly) and record a video walkthrough.
+
+
+== rc31 attribution draft (not published) ==
+Adds optional consented campaign metadata and requires a completed initial save for lead events. The stable channel remains rc29.

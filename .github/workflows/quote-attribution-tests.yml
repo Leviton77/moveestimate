@@ -1,0 +1,30 @@
+name: Quote attribution candidate tests
+on:
+  pull_request:
+    paths:
+      - 'wordpress-plugin/tom-moving-estimate/**'
+      - 'tests/campaign-attribution-harness.php'
+      - '.github/workflows/quote-attribution-tests.yml'
+  push:
+    branches: ['codex/quote-attribution-rc31']
+    paths:
+      - 'wordpress-plugin/tom-moving-estimate/**'
+      - 'tests/campaign-attribution-harness.php'
+      - '.github/workflows/quote-attribution-tests.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: PHP and browser script syntax
+        run: |
+          set -euo pipefail
+          find wordpress-plugin/tom-moving-estimate -name '*.php' -print0 | xargs -0 -r -n1 php -l
+          node --check wordpress-plugin/tom-moving-estimate/assets/js/public.js
+      - name: API-to-row attribution tests with isolated WordPress and database doubles
+        run: php tests/campaign-attribution-harness.php

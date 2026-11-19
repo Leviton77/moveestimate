@@ -154,6 +154,7 @@ final class TME_Public
             'language'            => $lang,
             'form_url'            => self::same_site_url((string) ($payload['formUrl'] ?? '')),
             'google_click'        => $submission_type === 'info' ? ($payload['googleClick'] ?? null) : null,
+            'campaign'            => $submission_type === 'info' ? ($payload['campaignAttribution'] ?? null) : null,
         );
 
         // Email, destination, move date and home size are optional: a phone number is enough to follow up.
