@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TME rc31 Staging Acceptance
  * Description: One-shot, exact-host rc31 database acceptance with synthetic records and intercepted mail.
- * Version: 0.1.0
+ * Version: 0.1.1
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -79,7 +79,7 @@ final class TME_RC31_Staging_Acceptance
                 self::check($report, $language . '_owned_row', $row && $row->client_name === $name
                     && $row->phone === '2025550100' && $row->email === '');
                 if ($choice === 'granted') {
-                    self::check($report, 'fr_saved_campaign', json_decode((string) $row->campaign_attribution, true) === $values);
+                    self::check($report, 'fr_saved_campaign', json_decode((string) ($row->campaign_attribution ?? ''), true) === $values);
                     self::check($report, 'fr_saved_consent_time',
                         $row->campaign_consent_at === gmdate('Y-m-d H:i:s', intdiv($now - 1000, 1000)));
                     self::check($report, 'fr_saved_gclid', $row->google_click_id === 'QA_AbC-123');
