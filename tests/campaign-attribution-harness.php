@@ -4,6 +4,7 @@ $root = $argv[1] ?? dirname(__DIR__) . '/wordpress-plugin/tom-moving-estimate';
 define('ABSPATH', sys_get_temp_dir() . '/tme-attribution-test-' . getmypid() . '/');
 define('TME_VERSION', '1.2.0-rc31-attribution-draft');
 define('HOUR_IN_SECONDS', 3600);
+define('MINUTE_IN_SECONDS', 60);
 define('DAY_IN_SECONDS', 86400);
 @mkdir(ABSPATH . 'wp-admin/includes', 0700, true);
 file_put_contents(ABSPATH . 'wp-admin/includes/upgrade.php', '<?php');
