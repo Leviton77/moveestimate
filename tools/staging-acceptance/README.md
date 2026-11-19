@@ -1,6 +1,6 @@
 # One-shot rc31 Staging acceptance helper
 
-This optional QA plugin is separate from the rc31 product package. It runs only on administrator activation, only when both home_url and site_url are exactly HTTPS 1227937.us19.myftpupload.com and the rc31 plugin/schema version is loaded. It adds no REST route, public API, credentials, cron job, or frontend hook.
+This optional QA plugin is separate from the rc31 product package. The execution gate accepts an administrator or the exact WordPress activation hook (including delegated Jetpack activation), and only when both home_url and site_url are exactly HTTPS 1227937.us19.myftpupload.com and the rc31 plugin/schema version is loaded. It adds no REST route, public API, credentials, cron job, or frontend hook.
 
 It reads schema column names, then intercepts wp_mail using pre_wp_mail and verifies interception with an invalid-domain self-check. Two synthetic info quotes are submitted through the actual installed TME_Public::create_session handler: FR with advertising consent and EN with denied advertising consent. Email is empty; phone is a reserved 202-555-0100 test number; names have an unpredictable 96-bit fixture marker. No analytics SDK is executed.
 
