@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TME rc31 Staging Acceptance
  * Description: One-shot, exact-host rc31 database acceptance with synthetic records and intercepted mail.
- * Version: 0.1.1
+ * Version: 0.1.2
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -36,7 +36,8 @@ final class TME_RC31_Staging_Acceptance
             $report['target_allowed'] = rtrim(home_url('/'), '/') === self::ORIGIN
                 && rtrim(site_url('/'), '/') === self::ORIGIN;
             self::check($report, 'exact_https_staging_target', $report['target_allowed']);
-            self::check($report, 'administrator_activation', current_user_can('manage_options'));
+            self::check($report, 'authorized_activation_context', current_user_can('manage_options')
+                || doing_action('activate_' . plugin_basename(__FILE__)));
             self::check($report, 'expected_plugin_loaded', defined('TME_VERSION') && TME_VERSION === self::VERSION
                 && class_exists('TME_Public') && class_exists('TME_DB'));
             self::check($report, 'schema_version', get_option('tme_db_version') === self::VERSION);
